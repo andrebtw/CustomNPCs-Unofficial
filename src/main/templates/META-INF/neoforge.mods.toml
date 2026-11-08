@@ -1,0 +1,29 @@
+license="${mod_license}"
+issueTrackerURL="https://github.com/BetaZavr/CustomNPCs-Unofficial/issues"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+logoFile="logo_unofficial.png"
+authors="${mod_authors}"
+credits="Original mod by Noppes. Unofficial 1.12.2 fork by BetaZavr/Ar2t1e. Goodbird."
+description='''${mod_description}'''
+
+# Stage 2+: enable once the first mixin is needed.
+#[[mixins]]
+#config="${mod_id}.mixins.json"
+
+[[dependencies.${mod_id}]]
+    modId="neoforge"
+    type="required"
+    versionRange="[${neo_version},)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
