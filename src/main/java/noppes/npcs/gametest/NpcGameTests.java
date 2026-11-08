@@ -36,6 +36,9 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import noppes.npcs.CustomNpcs;
 import noppes.npcs.entity.EntityCustomNpc;
 import noppes.npcs.entity.NpcSpawner;
+import noppes.npcs.faction.FactionChecks;
+import noppes.npcs.faction.FactionRegistry;
+import noppes.npcs.registry.NpcAttachments;
 import noppes.npcs.registry.NpcItems;
 import noppes.npcs.registry.NpcEntities;
 
@@ -62,6 +65,8 @@ public final class NpcGameTests {
         FUNCTIONS.register("spawner_places_npc_above_clicked_block", () -> NpcGameTests::spawnerPlacesNpcAboveClickedBlock);
         FUNCTIONS.register("wand_denied_without_permission", () -> NpcGameTests::wandDeniedWithoutPermission);
         FUNCTIONS.register("wand_spawns_npc_with_permission", () -> NpcGameTests::wandSpawnsNpcWithPermission);
+        FUNCTIONS.register("faction_registry_has_defaults_and_persists", () -> NpcGameTests::factionRegistryHasDefaultsAndPersists);
+        FUNCTIONS.register("player_points_default_and_attach", () -> NpcGameTests::playerPointsDefaultAndAttach);
     }
 
     private NpcGameTests() {}
@@ -189,6 +194,30 @@ public final class NpcGameTests {
         var copy = reload(h, npc);
         h.assertValueEqual("Tagged", copy.display.getName(), "display name after reload");
         h.assertValueEqual("Tagged", copy.getCustomName().getString(), "CustomName after reload");
+        h.succeed();
+    }
+
+    private static void factionRegistryHasDefaultsAndPersists(GameTestHelper h) {
+        var server = h.getLevel().getServer();
+        var reg = FactionRegistry.get(server);
+        h.assertTrue(reg == FactionRegistry.get(server), "same instance from data storage");
+        h.assertTrue(reg.get(2).isAggressiveToNpc(0, java.util.Set.of()), "aggressive hates friendly");
+        h.assertValueEqual(0, reg.getOrFirst(99).id, "fallback to first");
+        var tag = FactionRegistry.TYPE.codec().encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, reg).getOrThrow();
+        var copy = FactionRegistry.TYPE.codec().parse(net.minecraft.nbt.NbtOps.INSTANCE, tag).getOrThrow();
+        h.assertValueEqual(3, copy.all().size(), "factions persist through the codec");
+        h.succeed();
+    }
+
+    private static void playerPointsDefaultAndAttach(GameTestHelper h) {
+        var p = h.makeMockPlayer(GameType.SURVIVAL);
+        var reg = FactionRegistry.get(h.getLevel().getServer());
+        h.assertTrue(FactionChecks.isAggressiveToPlayer(reg.get(2), p), "0 points < 500");
+        h.assertTrue(FactionChecks.isFriendlyToPlayer(reg.get(0), p), "2000 >= 1500");
+        h.assertTrue(FactionChecks.isNeutralToPlayer(reg.get(1), p), "1000 is neutral");
+        h.assertFalse(FactionChecks.isAggressiveToPlayer(reg.get(2), h.makeMockPlayer(GameType.CREATIVE)), "creative exempt");
+        p.getData(NpcAttachments.FACTION_POINTS).set(2, 600);
+        h.assertFalse(FactionChecks.isAggressiveToPlayer(reg.get(2), p), "points from the attachment");
         h.succeed();
     }
 }

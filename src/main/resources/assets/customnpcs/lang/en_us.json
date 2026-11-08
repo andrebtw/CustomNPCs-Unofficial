@@ -2,5 +2,8 @@
   "itemGroup.customnpcs": "Custom NPCs",
   "entity.customnpcs.customnpc": "Custom NPC",
   "item.customnpcs.npcwand": "Npc Wand",
-  "availability.permission": "You don't have permission to do this"
+  "availability.permission": "You don't have permission to do this",
+  "faction.name.aggressive": "Aggressive",
+  "faction.name.friendly": "Friendly",
+  "faction.name.neutral": "Neutral"
 }
