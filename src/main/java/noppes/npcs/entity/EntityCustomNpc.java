@@ -5,6 +5,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
@@ -17,6 +18,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
+import noppes.npcs.client.NpcTextures;
 import noppes.npcs.entity.data.DataDisplay;
 import noppes.npcs.entity.data.DataStats;
 import noppes.npcs.util.NpcNames;
@@ -107,6 +109,11 @@ public class EntityCustomNpc extends PathfinderMob {
 
     public String getSyncedTexture() {
         return entityData.get(DATA_TEXTURE);
+    }
+
+    /** Skin from the synced texture string; invalid strings fall back to Steve. */
+    public Identifier getSkinTexture() {
+        return NpcTextures.resolve(getSyncedTexture());
     }
 
     public String getSyncedTitle() {
