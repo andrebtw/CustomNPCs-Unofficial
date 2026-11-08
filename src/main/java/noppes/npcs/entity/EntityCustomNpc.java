@@ -6,7 +6,9 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -15,17 +17,23 @@ import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import noppes.npcs.client.NpcTextures;
+import noppes.npcs.entity.data.DataAI;
+import noppes.npcs.entity.data.DataAdvanced;
 import noppes.npcs.entity.data.DataDisplay;
+import noppes.npcs.entity.data.DataInventory;
 import noppes.npcs.entity.data.DataStats;
+import noppes.npcs.faction.Faction;
+import noppes.npcs.faction.FactionRegistry;
 import noppes.npcs.util.NpcNames;
 
 /**
- * The Custom NPC. Replaces 1.12.2 EntityNPCInterface/EntityCustomNpc for the display and stats
- * subset; AI, combat, roles and model parts come in later stages.
+ * The Custom NPC. Replaces 1.12.2 EntityNPCInterface/EntityCustomNpc for the display, stats, AI,
+ * inventory and faction data; combat behaviour, roles and model parts come in later stages.
  */
 public class EntityCustomNpc extends PathfinderMob {
 
@@ -37,9 +45,18 @@ public class EntityCustomNpc extends PathfinderMob {
             SynchedEntityData.defineId(EntityCustomNpc.class, EntityDataSerializers.INT);
     public static final EntityDataAccessor<String> DATA_TITLE =
             SynchedEntityData.defineId(EntityCustomNpc.class, EntityDataSerializers.STRING);
+    public static final EntityDataAccessor<Integer> DATA_FACTION =
+            SynchedEntityData.defineId(EntityCustomNpc.class, EntityDataSerializers.INT);
+
+    /** Vanilla slots the NPC's gear is shown in; vanilla never drops them (DropChances 0). */
+    private static final EquipmentSlot[] GEAR_SLOTS = {EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND,
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
 
     public final DataDisplay display = new DataDisplay(this::applyDisplay);
     public final DataStats stats = new DataStats(this::applyStats);
+    public final DataAI ai = new DataAI(this::applyAi);
+    public final DataInventory inventory = new DataInventory(this::applyInventory);
+    public final DataAdvanced advanced = new DataAdvanced(this::applyAdvanced);
 
     public EntityCustomNpc(EntityType<? extends EntityCustomNpc> type, Level level) {
         super(type, level);
@@ -50,6 +67,9 @@ public class EntityCustomNpc extends PathfinderMob {
         }
         applyDisplay();
         applyStats();
+        applyAi();
+        applyInventory();
+        applyAdvanced();
     }
 
     public static AttributeSupplier.Builder createAttributes() {
@@ -67,6 +87,7 @@ public class EntityCustomNpc extends PathfinderMob {
         builder.define(DATA_SIZE, DataDisplay.DEFAULT_SIZE);
         builder.define(DATA_SHOW_NAME, 0);
         builder.define(DATA_TITLE, "");
+        builder.define(DATA_FACTION, 0);
     }
 
     @Override
@@ -100,6 +121,95 @@ public class EntityCustomNpc extends PathfinderMob {
             setHealth(getMaxHealth());
         }
         getAttribute(Attributes.FOLLOW_RANGE).setBaseValue(stats.getAggroRange());
+        getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(stats.melee.getStrength());
+    }
+
+    /** Movement attributes from DataAI (1.12.2 setWalkingSpeed / stepHeight). */
+    private void applyAi() {
+        if (level().isClientSide()) {
+            return;
+        }
+        getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(ai.walkSpeed());
+        getAttribute(Attributes.STEP_HEIGHT).setBaseValue(ai.getStepHeight());
+    }
+
+    /**
+     * Shows the DataInventory gear in the vanilla slots (so the humanoid layers render it) and keeps
+     * vanilla from dropping it: NPC drops are DataInventory's job (2b-3).
+     */
+    private void applyInventory() {
+        if (level().isClientSide()) {
+            return;
+        }
+        for (EquipmentSlot slot : GEAR_SLOTS) {
+            ItemStack stack = inventoryStack(slot);
+            if (getItemBySlot(slot) != stack) {
+                super.setItemSlot(slot, stack, false);
+            }
+            setDropChance(slot, 0.0f);
+        }
+    }
+
+    private void applyAdvanced() {
+        if (level().isClientSide()) {
+            return;
+        }
+        entityData.set(DATA_FACTION, advanced.getFactionId());
+    }
+
+    private ItemStack inventoryStack(EquipmentSlot slot) {
+        return switch (slot) {
+            case MAINHAND -> inventory.getWeapon(DataInventory.MAIN_HAND);
+            case OFFHAND -> inventory.getWeapon(DataInventory.OFF_HAND);
+            case HEAD -> inventory.getArmor(DataInventory.HEAD);
+            case CHEST -> inventory.getArmor(DataInventory.CHEST);
+            case LEGS -> inventory.getArmor(DataInventory.LEGS);
+            case FEET -> inventory.getArmor(DataInventory.FEET);
+            default -> ItemStack.EMPTY;
+        };
+    }
+
+    /**
+     * Keeps DataInventory in step with vanilla equipment changes (/item replace, dispensers), so they
+     * survive the next applyInventory and a reload. Same idea as setCustomName; the setters' change
+     * check stops the recursion.
+     */
+    @Override
+    public void setItemSlot(EquipmentSlot slot, ItemStack stack, boolean insideTransaction) {
+        super.setItemSlot(slot, stack, insideTransaction);
+        if (inventory == null || level().isClientSide()) {
+            return;
+        }
+        switch (slot) {
+            case MAINHAND -> inventory.setWeapon(DataInventory.MAIN_HAND, stack);
+            case OFFHAND -> inventory.setWeapon(DataInventory.OFF_HAND, stack);
+            case HEAD -> inventory.setArmor(DataInventory.HEAD, stack);
+            case CHEST -> inventory.setArmor(DataInventory.CHEST, stack);
+            case LEGS -> inventory.setArmor(DataInventory.LEGS, stack);
+            case FEET -> inventory.setArmor(DataInventory.FEET, stack);
+            default -> { }
+        }
+    }
+
+    /**
+     * The NPC's faction (server side). An id missing from the registry falls back to the first
+     * faction without changing the saved FactionID.
+     */
+    public Faction getFaction() {
+        return FactionRegistry.get(((ServerLevel) level()).getServer()).getOrFirst(advanced.getFactionId());
+    }
+
+    public int getSyncedFaction() {
+        return entityData.get(DATA_FACTION);
+    }
+
+    /** 1.12.2 startPos() lazily takes the current position; here it is fixed when first added. */
+    @Override
+    public void onAddedToLevel() {
+        super.onAddedToLevel();
+        if (!level().isClientSide() && ai.getStartPos() == null) {
+            ai.setStartPos(blockPosition());
+        }
     }
 
     /** Render scale from synced data (size 5 = 1.0). Usable on both sides. */
@@ -170,6 +280,9 @@ public class EntityCustomNpc extends PathfinderMob {
         super.addAdditionalSaveData(out);
         display.save(out);
         stats.save(out);
+        ai.save(out);
+        inventory.save(out);
+        advanced.save(out);
     }
 
     @Override
@@ -177,8 +290,14 @@ public class EntityCustomNpc extends PathfinderMob {
         super.readAdditionalSaveData(in);
         display.load(in);
         stats.load(in);
+        ai.load(in);
+        inventory.load(in);
+        advanced.load(in);
         applyDisplay();
         applyStats();
+        applyAi();
+        applyInventory();
+        applyAdvanced();
         // Vanilla read Health while MAX_HEALTH was still the default (flat /summon NBT has no
         // "attributes"), so it was clamped to 20. Re-read it now that MaxHealth is applied.
         setHealth(in.getFloatOr("Health", getMaxHealth()));

@@ -97,6 +97,26 @@ only), melee/ranged/resistances/rarity, `DataInventory`, `DataAI` and the `ai/**
 only float and look around), spawn egg, the other items, the title line and full player model
 (stage 4), wand edit GUI and right-clicking existing NPCs (stages 3/4), and the OBJ wand model.
 
+**2b-1 ✅ (plan `docs/superpowers/plans/2026-11-08-stage-2b1-data-gear-factions.md`, design
+`docs/superpowers/specs/2026-11-08-stage-2b-combat-design.md`):** every remaining `DataStats` key
+plus `DataMelee`, `DataRanged` and `Resistances` (flat, 1.12.2 keys); `DataAI` with all keys;
+`DataInventory` + `DropSet` (1.21.11 item format under the 1.12.2 keys); the faction subset of
+`DataAdvanced`. The NPC holds and wears its gear through the vanilla slots (vanilla never drops it)
+and vanilla equipment changes are kept; melee strength, walk speed and step height drive the
+attributes. Factions: `FactionRegistry` (`SavedData`, 1.12.2 defaults) and per-player
+`PlayerFactionPoints` (attachment, `copyOnDeath`) answering the 1.12.2 friendly/neutral/aggressive
+questions. A default NPC stays harmless. These keys are data only; behaviour comes next.
+Still owed by 2b:
+- **2b-2 targeting and melee:** target goals (aggro, `OnAttack` retaliation, other factions,
+  `AttackInvisible`, `DirectLOS`/`EnumSeeTarget`, `CalmdownRange`), `CombatHandler`, melee per
+  `DataMelee`, every `EnumNpcTactics` tactic.
+- **2b-3 damage, death, respawn:** resistances, `PotionImmune`, `IgnoreCobweb`, `ChanceBlockDamage`,
+  regen, `BurnInSun`, the killed state, drops per `DataInventory`/`LootMode` (corpse loot via the
+  vanilla chest menu), XP, `SpawnCycle`/`RespawnTime`, `reset()`.
+- **2b-4 ranged and projectiles:** `EntityProjectile` (`customnpcs:projectile`) driven by
+  `DataRanged`, switching to melee at `DistanceToMelee`.
+- Not yet checked by hand: the 2b-1 gear render check (`runClient`) and the 2a wand check.
+
 1. Copy bucket A (`constants`, `markovnames`).
 2. `EntityCustomNpc extends PathfinderMob`, entity type, attributes, spawn egg.
    Port `entity/data` (DataDisplay, DataStats, DataInventory, DataAI) with `ValueInput/ValueOutput`

@@ -21,6 +21,8 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.IntTag;
 import net.minecraft.world.level.storage.ValueInput;
@@ -77,6 +79,13 @@ public final class NpcGameTests {
         FUNCTIONS.register("inventory_round_trip", () -> NpcGameTests::inventoryRoundTrip);
         FUNCTIONS.register("legacy_drop_shapes_load", () -> NpcGameTests::legacyDropShapesLoad);
         FUNCTIONS.register("bad_item_entries_are_skipped", () -> NpcGameTests::badItemEntriesAreSkipped);
+        FUNCTIONS.register("full_data_round_trip", () -> NpcGameTests::fullDataRoundTrip);
+        FUNCTIONS.register("summoned_weapons_are_held", () -> NpcGameTests::summonedWeaponsAreHeld);
+        FUNCTIONS.register("vanilla_equip_change_survives_reload", () -> NpcGameTests::vanillaEquipChangeSurvivesReload);
+        FUNCTIONS.register("unknown_faction_falls_back_to_first", () -> NpcGameTests::unknownFactionFallsBackToFirst);
+        FUNCTIONS.register("default_npc_is_harmless", () -> NpcGameTests::defaultNpcIsHarmless);
+        FUNCTIONS.register("gear_is_never_dropped_by_vanilla", () -> NpcGameTests::gearIsNeverDroppedByVanilla);
+        FUNCTIONS.register("start_pos_is_set_when_added", () -> NpcGameTests::startPosIsSetWhenAdded);
     }
 
     private NpcGameTests() {}
@@ -327,6 +336,114 @@ public final class NpcGameTests {
         h.assertTrue(inv.getWeapon(0).isEmpty(), "unknown item skipped");
         h.assertTrue(inv.getWeapon(1).isEmpty(), "entry without Slot skipped");
         h.assertValueEqual(Items.SHIELD, inv.getWeapon(2).getItem(), "valid entry kept");
+        h.succeed();
+    }
+
+    private static EntityCustomNpc loadNpc(GameTestHelper h, CompoundTag tag) {
+        return (EntityCustomNpc) EntityType.create(NpcEntities.CUSTOM_NPC.get(), input(h, tag), h.getLevel(),
+                EntitySpawnReason.LOAD).orElseThrow();
+    }
+
+    private static CompoundTag saveNpc(GameTestHelper h, EntityCustomNpc npc) {
+        TagValueOutput out = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, h.getLevel().registryAccess());
+        npc.saveWithoutId(out);
+        return out.buildResult();
+    }
+
+    private static void fullDataRoundTrip(GameTestHelper h) {
+        var npc = h.spawn(NpcEntities.CUSTOM_NPC.get(), CENTER);
+        npc.stats.melee.setStrength(9);
+        npc.ai.setMoveSpeed(8);
+        npc.ai.setStepHeight(1.0f);
+        npc.advanced.setFactionId(2);
+        npc.inventory.setWeapon(0, new ItemStack(Items.IRON_SWORD));
+        var copy = reload(h, npc);
+        h.assertValueEqual(9, copy.stats.melee.getStrength(), "melee strength");
+        h.assertValueEqual(8, copy.ai.getMoveSpeed(), "move speed");
+        h.assertValueEqual(2, copy.advanced.getFactionId(), "faction id");
+        h.assertValueEqual(9.0, copy.getAttributeBaseValue(Attributes.ATTACK_DAMAGE), "ATTACK_DAMAGE");
+        h.assertTrue(Math.abs(copy.getAttributeBaseValue(Attributes.MOVEMENT_SPEED) - 0.4) < 1e-6, "MOVEMENT_SPEED 8/20");
+        h.assertTrue(Math.abs(copy.getAttributeBaseValue(Attributes.STEP_HEIGHT) - 1.0) < 1e-6, "STEP_HEIGHT");
+        h.assertTrue(copy.getMainHandItem().is(Items.IRON_SWORD), "main hand");
+        h.assertValueEqual(2, copy.getSyncedFaction(), "synced faction");
+        h.succeed();
+    }
+
+    private static void summonedWeaponsAreHeld(GameTestHelper h) {
+        var weapons = new ListTag();
+        weapons.add(itemEntry(0, "minecraft:bow", 1));
+        weapons.add(itemEntry(2, "minecraft:shield", 1));
+        var armor = new ListTag();
+        armor.add(itemEntry(0, "minecraft:golden_helmet", 1));
+        armor.add(itemEntry(1, "minecraft:iron_chestplate", 1));
+        armor.add(itemEntry(2, "minecraft:iron_leggings", 1));
+        armor.add(itemEntry(3, "minecraft:iron_boots", 1));
+        var tag = new CompoundTag();
+        tag.put("Weapons", weapons);
+        tag.put("Armor", armor);
+        var npc = loadNpc(h, tag);
+        h.assertTrue(npc.getMainHandItem().is(Items.BOW), "main hand bow");
+        h.assertTrue(npc.getOffhandItem().is(Items.SHIELD), "off hand shield");
+        h.assertTrue(npc.getItemBySlot(EquipmentSlot.HEAD).is(Items.GOLDEN_HELMET), "head");
+        h.assertTrue(npc.getItemBySlot(EquipmentSlot.CHEST).is(Items.IRON_CHESTPLATE), "chest");
+        h.assertTrue(npc.getItemBySlot(EquipmentSlot.LEGS).is(Items.IRON_LEGGINGS), "legs");
+        h.assertTrue(npc.getItemBySlot(EquipmentSlot.FEET).is(Items.IRON_BOOTS), "feet");
+        h.succeed();
+    }
+
+    private static void vanillaEquipChangeSurvivesReload(GameTestHelper h) {
+        var npc = h.spawn(NpcEntities.CUSTOM_NPC.get(), CENTER);
+        npc.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        npc.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.DIAMOND_HELMET));
+        h.assertTrue(npc.inventory.getWeapon(2).is(Items.SHIELD), "inventory follows the slot");
+        var copy = reload(h, npc);
+        h.assertTrue(copy.inventory.getWeapon(2).is(Items.SHIELD), "inventory after reload");
+        h.assertTrue(copy.getOffhandItem().is(Items.SHIELD), "off hand after reload");
+        h.assertTrue(copy.inventory.getArmor(0).is(Items.DIAMOND_HELMET), "head in inventory");
+        npc.setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
+        h.assertTrue(npc.inventory.getWeapon(2).isEmpty(), "clearing the slot clears the inventory");
+        h.succeed();
+    }
+
+    private static void unknownFactionFallsBackToFirst(GameTestHelper h) {
+        var tag = new CompoundTag();
+        tag.putInt("FactionID", 99);
+        var npc = loadNpc(h, tag);
+        h.assertValueEqual(0, npc.getFaction().id, "falls back to the first faction");
+        h.assertValueEqual(99, saveNpc(h, npc).getIntOr("FactionID", -1), "saved id kept");
+        h.succeed();
+    }
+
+    private static void defaultNpcIsHarmless(GameTestHelper h) {
+        var npc = h.spawn(NpcEntities.CUSTOM_NPC.get(), CENTER);
+        h.makeMockPlayer(GameType.SURVIVAL).setPos(h.absoluteVec(new Vec3(3.5, 1, 2.5)));
+        h.assertValueEqual(0, npc.getFaction().id, "default faction");
+        h.runAfterDelay(20, () -> {
+            h.assertTrue(npc.getTarget() == null, "no target");
+            h.succeed();
+        });
+    }
+
+    private static void gearIsNeverDroppedByVanilla(GameTestHelper h) {
+        var npc = h.spawn(NpcEntities.CUSTOM_NPC.get(), CENTER);
+        for (EquipmentSlot slot : new EquipmentSlot[] {EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND,
+                EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+            h.assertValueEqual(0f, npc.getDropChances().byEquipment(slot), "drop chance " + slot);
+        }
+        var copy = reload(h, npc);
+        h.assertValueEqual(0f, copy.getDropChances().byEquipment(EquipmentSlot.MAINHAND), "after reload");
+        h.succeed();
+    }
+
+    private static void startPosIsSetWhenAdded(GameTestHelper h) {
+        var npc = h.spawn(NpcEntities.CUSTOM_NPC.get(), CENTER);
+        h.assertValueEqual(npc.blockPosition(), npc.ai.getStartPos(), "start pos = spawn pos");
+        var tag = new CompoundTag();
+        tag.putIntArray("StartPosNew", new int[] {1, 2, 3});
+        var loaded = loadNpc(h, tag);
+        loaded.setPos(h.absoluteVec(new Vec3(2.5, 1, 2.5)));
+        h.getLevel().addFreshEntity(loaded);
+        h.assertValueEqual(new BlockPos(1, 2, 3), loaded.ai.getStartPos(), "saved start pos kept");
         h.succeed();
     }
 }
