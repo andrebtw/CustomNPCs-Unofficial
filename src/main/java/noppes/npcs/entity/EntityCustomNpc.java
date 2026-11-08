@@ -179,5 +179,20 @@ public class EntityCustomNpc extends PathfinderMob {
         stats.load(in);
         applyDisplay();
         applyStats();
+        // Vanilla read Health while MAX_HEALTH was still the default (flat /summon NBT has no
+        // "attributes"), so it was clamped to 20. Re-read it now that MaxHealth is applied.
+        setHealth(in.getFloatOr("Health", getMaxHealth()));
+    }
+
+    /**
+     * Keeps display.name in step with vanilla renames (name tags, /data, CustomName on load), so
+     * they are not reverted by the next applyDisplay. setName's equality check stops the recursion.
+     */
+    @Override
+    public void setCustomName(Component name) {
+        super.setCustomName(name);
+        if (display != null && !level().isClientSide()) {
+            display.setName(name == null ? "" : name.getString());
+        }
     }
 }

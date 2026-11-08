@@ -7,6 +7,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.gametest.framework.FunctionGameTestInstance;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.TestData;
@@ -55,6 +57,8 @@ public final class NpcGameTests {
         FUNCTIONS.register("name_persists_and_is_not_rerolled", () -> NpcGameTests::namePersistsAndIsNotRerolled);
         FUNCTIONS.register("max_health_change_does_not_leave_health_above_max",
                 () -> NpcGameTests::maxHealthChangeDoesNotLeaveHealthAboveMax);
+        FUNCTIONS.register("summoned_max_health_spawns_at_full_health", () -> NpcGameTests::summonedMaxHealthSpawnsAtFullHealth);
+        FUNCTIONS.register("name_tag_rename_survives_reload", () -> NpcGameTests::nameTagRenameSurvivesReload);
         FUNCTIONS.register("spawner_places_npc_above_clicked_block", () -> NpcGameTests::spawnerPlacesNpcAboveClickedBlock);
         FUNCTIONS.register("wand_denied_without_permission", () -> NpcGameTests::wandDeniedWithoutPermission);
         FUNCTIONS.register("wand_spawns_npc_with_permission", () -> NpcGameTests::wandSpawnsNpcWithPermission);
@@ -162,6 +166,29 @@ public final class NpcGameTests {
         };
         h.assertValueEqual(InteractionResult.SUCCESS, useWand(h, player), "allowed");
         h.assertEntityPresent(NpcEntities.CUSTOM_NPC.get(), new BlockPos(2, 1, 2));
+        h.succeed();
+    }
+
+    /** /summon-style flat NBT with no "attributes" list: health must follow the loaded MaxHealth. */
+    private static void summonedMaxHealthSpawnsAtFullHealth(GameTestHelper h) {
+        var tag = new CompoundTag();
+        tag.putDouble("MaxHealth", 100.0);
+        var npc = (EntityCustomNpc) EntityType.create(NpcEntities.CUSTOM_NPC.get(),
+                TagValueInput.create(ProblemReporter.DISCARDING, h.getLevel().registryAccess(), tag),
+                h.getLevel(), EntitySpawnReason.LOAD).orElseThrow();
+        h.assertValueEqual(100f, npc.getMaxHealth(), "max health");
+        h.assertValueEqual(100f, npc.getHealth(), "health");
+        h.succeed();
+    }
+
+    /** A vanilla rename (name tag, /data) must update display.name so it is not reverted on reload. */
+    private static void nameTagRenameSurvivesReload(GameTestHelper h) {
+        var npc = h.spawn(NpcEntities.CUSTOM_NPC.get(), CENTER);
+        npc.setCustomName(Component.literal("Tagged"));
+        h.assertValueEqual("Tagged", npc.display.getName(), "display name follows CustomName");
+        var copy = reload(h, npc);
+        h.assertValueEqual("Tagged", copy.display.getName(), "display name after reload");
+        h.assertValueEqual("Tagged", copy.getCustomName().getString(), "CustomName after reload");
         h.succeed();
     }
 }
