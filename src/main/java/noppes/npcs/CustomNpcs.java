@@ -8,7 +8,10 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.neoforge.gametest.GameTestHooks;
+import noppes.npcs.gametest.NpcGameTests;
 import noppes.npcs.network.NpcNetwork;
+import noppes.npcs.registry.NpcEntities;
 import noppes.npcs.registry.NpcRegistries;
 import org.slf4j.Logger;
 
@@ -23,7 +26,12 @@ public final class CustomNpcs {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public CustomNpcs(IEventBus modBus, ModContainer container) {
+        NpcEntities.init();
         NpcRegistries.register(modBus);
+        modBus.addListener(NpcEntities::registerAttributes);
+        if (GameTestHooks.isGametestEnabled()) {
+            NpcGameTests.register(modBus);
+        }
         modBus.addListener(NpcNetwork::register);
         modBus.addListener(this::commonSetup);
 
