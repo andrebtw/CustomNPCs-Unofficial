@@ -86,6 +86,17 @@ Each stage ends with something that runs (`./gradlew runClient`) and a commit.
   listed in the Mods menu; `runServer` starts.
 
 ### Stage 2: core NPC entity + registries
+**2a ✅ (plan `docs/superpowers/plans/2026-11-08-stage-2a-npc-entity.md`):** constants + markovnames
+copied; `EntityCustomNpc` (`customnpcs:customnpc`) with the `DataDisplay`/`DataStats` subset
+(1.12.2 NBT keys: name, title, texture, show-name, size, max health, aggro range, regen, respawn
+time, fire/drown/sun/fall/hide-body flags) and synced texture/size/title/show-name; humanoid
+renderer with skin fallback; NPC Wand + creative tab. JUnit (`./gradlew test`) and GameTests
+(`./gradlew runGameTestServer`) in place.
+Moved to 2b and later: `burnInSun`, health/combat regen and respawn behaviour (fields round-trip
+only), melee/ranged/resistances/rarity, `DataInventory`, `DataAI` and the `ai/**` goals (NPCs
+only float and look around), spawn egg, the other items, the title line and full player model
+(stage 4), wand edit GUI and right-clicking existing NPCs (stages 3/4), and the OBJ wand model.
+
 1. Copy bucket A (`constants`, `markovnames`).
 2. `EntityCustomNpc extends PathfinderMob`, entity type, attributes, spawn egg.
    Port `entity/data` (DataDisplay, DataStats, DataInventory, DataAI) with `ValueInput/ValueOutput`
