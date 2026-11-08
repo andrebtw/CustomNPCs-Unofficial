@@ -12,6 +12,7 @@ import net.neoforged.neoforge.gametest.GameTestHooks;
 import noppes.npcs.gametest.NpcGameTests;
 import noppes.npcs.network.NpcNetwork;
 import noppes.npcs.registry.NpcEntities;
+import noppes.npcs.registry.NpcItems;
 import noppes.npcs.registry.NpcRegistries;
 import org.slf4j.Logger;
 
@@ -27,6 +28,7 @@ public final class CustomNpcs {
 
     public CustomNpcs(IEventBus modBus, ModContainer container) {
         NpcEntities.init();
+        NpcItems.init();
         NpcRegistries.register(modBus);
         modBus.addListener(NpcEntities::registerAttributes);
         if (GameTestHooks.isGametestEnabled()) {

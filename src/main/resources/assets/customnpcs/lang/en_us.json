@@ -1,4 +1,6 @@
 {
   "itemGroup.customnpcs": "Custom NPCs",
-  "entity.customnpcs.customnpc": "Custom NPC"
+  "entity.customnpcs.customnpc": "Custom NPC",
+  "item.customnpcs.npcwand": "Npc Wand",
+  "availability.permission": "You don't have permission to do this"
 }

@@ -1,7 +1,10 @@
 package noppes.npcs.gametest;
 
 import java.util.function.Consumer;
+import com.mojang.authlib.GameProfile;
+import java.util.UUID;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.FunctionGameTestInstance;
@@ -9,6 +12,16 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.permissions.LevelBasedPermissionSet;
+import net.minecraft.server.permissions.PermissionSet;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
@@ -20,6 +33,8 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import noppes.npcs.CustomNpcs;
 import noppes.npcs.entity.EntityCustomNpc;
+import noppes.npcs.entity.NpcSpawner;
+import noppes.npcs.registry.NpcItems;
 import noppes.npcs.registry.NpcEntities;
 
 /**
@@ -40,6 +55,9 @@ public final class NpcGameTests {
         FUNCTIONS.register("name_persists_and_is_not_rerolled", () -> NpcGameTests::namePersistsAndIsNotRerolled);
         FUNCTIONS.register("max_health_change_does_not_leave_health_above_max",
                 () -> NpcGameTests::maxHealthChangeDoesNotLeaveHealthAboveMax);
+        FUNCTIONS.register("spawner_places_npc_above_clicked_block", () -> NpcGameTests::spawnerPlacesNpcAboveClickedBlock);
+        FUNCTIONS.register("wand_denied_without_permission", () -> NpcGameTests::wandDeniedWithoutPermission);
+        FUNCTIONS.register("wand_spawns_npc_with_permission", () -> NpcGameTests::wandSpawnsNpcWithPermission);
     }
 
     private NpcGameTests() {}
@@ -105,6 +123,45 @@ public final class NpcGameTests {
         npc.setHealth(40);
         npc.stats.setMaxHealth(10);
         h.assertTrue(npc.getHealth() <= 10f, "health clamped");
+        h.succeed();
+    }
+
+    private static void spawnerPlacesNpcAboveClickedBlock(GameTestHelper h) {
+        var ground = h.absolutePos(new BlockPos(2, 0, 2));
+        var npc = NpcSpawner.spawnAt(h.getLevel(), ground, 90f);
+        h.assertValueEqual(ground.above(), npc.blockPosition(), "position");
+        h.assertValueEqual(90f, npc.getYRot(), "yaw");
+        h.assertValueEqual(npc.getMaxHealth(), npc.getHealth(), "full health");
+        h.succeed();
+    }
+
+    private static InteractionResult useWand(GameTestHelper h, Player player) {
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(NpcItems.NPC_WAND.get()));
+        var pos = h.absolutePos(new BlockPos(2, 0, 2));
+        var hit = new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false);
+        return player.getMainHandItem().useOn(new UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+    }
+
+    private static void wandDeniedWithoutPermission(GameTestHelper h) {
+        var player = h.makeMockPlayer(GameType.SURVIVAL); // PermissionSet.NO_PERMISSIONS
+        h.assertValueEqual(InteractionResult.FAIL, useWand(h, player), "denied");
+        h.assertEntityNotPresent(NpcEntities.CUSTOM_NPC.get());
+        h.succeed();
+    }
+
+    private static void wandSpawnsNpcWithPermission(GameTestHelper h) {
+        var player = new Player(h.getLevel(), new GameProfile(UUID.randomUUID(), "test-mock-op")) {
+            @Override
+            public GameType gameMode() { return GameType.CREATIVE; }
+
+            @Override
+            public boolean isClientAuthoritative() { return false; }
+
+            @Override
+            public PermissionSet permissions() { return LevelBasedPermissionSet.GAMEMASTER; }
+        };
+        h.assertValueEqual(InteractionResult.SUCCESS, useWand(h, player), "allowed");
+        h.assertEntityPresent(NpcEntities.CUSTOM_NPC.get(), new BlockPos(2, 1, 2));
         h.succeed();
     }
 }
