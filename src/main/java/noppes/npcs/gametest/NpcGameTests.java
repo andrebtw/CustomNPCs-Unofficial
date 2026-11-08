@@ -86,6 +86,8 @@ public final class NpcGameTests {
         FUNCTIONS.register("default_npc_is_harmless", () -> NpcGameTests::defaultNpcIsHarmless);
         FUNCTIONS.register("gear_is_never_dropped_by_vanilla", () -> NpcGameTests::gearIsNeverDroppedByVanilla);
         FUNCTIONS.register("start_pos_is_set_when_added", () -> NpcGameTests::startPosIsSetWhenAdded);
+        FUNCTIONS.register("summoned_vanilla_equipment_is_kept", () -> NpcGameTests::summonedVanillaEquipmentIsKept);
+        FUNCTIONS.register("data_merge_equipment_is_kept", () -> NpcGameTests::dataMergeEquipmentIsKept);
     }
 
     private NpcGameTests() {}
@@ -444,6 +446,39 @@ public final class NpcGameTests {
         loaded.setPos(h.absoluteVec(new Vec3(2.5, 1, 2.5)));
         h.getLevel().addFreshEntity(loaded);
         h.assertValueEqual(new BlockPos(1, 2, 3), loaded.ai.getStartPos(), "saved start pos kept");
+        h.succeed();
+    }
+
+    /** /summon with the 1.21 "equipment" compound (no Weapons/Armor keys). */
+    private static void summonedVanillaEquipmentIsKept(GameTestHelper h) {
+        var equipment = new CompoundTag();
+        equipment.put("mainhand", itemEntry(null, "minecraft:diamond_sword", 1));
+        equipment.put("head", itemEntry(null, "minecraft:diamond_helmet", 1));
+        var tag = new CompoundTag();
+        tag.put("equipment", equipment);
+        var npc = loadNpc(h, tag);
+        h.assertTrue(npc.getMainHandItem().is(Items.DIAMOND_SWORD), "main hand from equipment");
+        h.assertTrue(npc.inventory.getWeapon(0).is(Items.DIAMOND_SWORD), "inventory follows");
+        h.assertTrue(npc.getItemBySlot(EquipmentSlot.HEAD).is(Items.DIAMOND_HELMET), "head from equipment");
+        var saved = saveNpc(h, npc);
+        h.assertFalse(saved.contains("equipment"), "gear is saved as Weapons/Armor only");
+        var copy = loadNpc(h, saved);
+        h.assertTrue(copy.getMainHandItem().is(Items.DIAMOND_SWORD), "survives reload");
+        h.succeed();
+    }
+
+    /** /data merge: the NPC's own saved tag plus a user "equipment" compound. */
+    private static void dataMergeEquipmentIsKept(GameTestHelper h) {
+        var npc = h.spawn(NpcEntities.CUSTOM_NPC.get(), CENTER);
+        npc.inventory.setWeapon(0, new ItemStack(Items.IRON_SWORD));
+        var merged = saveNpc(h, npc);
+        var equipment = new CompoundTag();
+        equipment.put("head", itemEntry(null, "minecraft:diamond_helmet", 1));
+        merged.put("equipment", equipment);
+        var copy = loadNpc(h, merged);
+        h.assertTrue(copy.getItemBySlot(EquipmentSlot.HEAD).is(Items.DIAMOND_HELMET), "merged helmet kept");
+        h.assertTrue(copy.inventory.getArmor(0).is(Items.DIAMOND_HELMET), "helmet in inventory");
+        h.assertTrue(copy.getMainHandItem().is(Items.IRON_SWORD), "existing gear untouched");
         h.succeed();
     }
 }

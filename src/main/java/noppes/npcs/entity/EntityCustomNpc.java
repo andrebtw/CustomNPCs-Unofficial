@@ -8,6 +8,7 @@ import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.EntityEquipment;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
@@ -283,6 +284,9 @@ public class EntityCustomNpc extends PathfinderMob {
         ai.save(out);
         inventory.save(out);
         advanced.save(out);
+        // The gear lives in Weapons/Armor. Without this, /data merge would re-read stale vanilla
+        // equipment; with it, an "equipment" key on load always comes from the user.
+        out.discard("equipment");
     }
 
     @Override
@@ -293,6 +297,16 @@ public class EntityCustomNpc extends PathfinderMob {
         ai.load(in);
         inventory.load(in);
         advanced.load(in);
+        // 1.21 /summon and /data merge give gear as "equipment"; take it into DataInventory so
+        // applyInventory keeps it instead of reverting to Weapons/Armor.
+        in.read("equipment", EntityEquipment.CODEC).ifPresent(equipment -> {
+            for (EquipmentSlot slot : GEAR_SLOTS) {
+                ItemStack stack = equipment.get(slot);
+                if (!stack.isEmpty()) {
+                    setItemSlot(slot, stack);
+                }
+            }
+        });
         applyDisplay();
         applyStats();
         applyAi();

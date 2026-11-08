@@ -226,7 +226,7 @@ class NpcDataTest {
         var s = new DataStats(() -> {});
         s.load(in(t));
         assertEquals(4, s.getSpawnCycle());
-        assertEquals(4, s.getCreatureType());
+        assertEquals(3, s.getCreatureType()); // 1.12.2 EnumCreatureAttribute ends at ILLAGER
         assertEquals(0, s.getRarity());
         assertEquals(DataStats.MAX_LEVEL, s.getLevel());
     }

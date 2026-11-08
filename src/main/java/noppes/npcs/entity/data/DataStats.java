@@ -12,8 +12,8 @@ public final class DataStats {
 
     /** 1.12.2 config default {@code CustomNpcs.MaxLv}. */
     public static final int MAX_LEVEL = 45;
-    /** Highest ordinal of 1.12.2 EnumCreatureAttribute (UNDEFINED, UNDEAD, ARTHROPOD, ILLAGER, WATER). */
-    public static final int MAX_CREATURE_TYPE = 4;
+    /** Highest ordinal of 1.12.2 EnumCreatureAttribute (UNDEFINED, UNDEAD, ARTHROPOD, ILLAGER). */
+    public static final int MAX_CREATURE_TYPE = 3;
     /** SpawnCycle: 0 always, 1 day, 2 night, 3 never, 4 natural. */
     public static final int MAX_SPAWN_CYCLE = 4;
     /** Highest ordinal of 1.12.2 EnumCreatureRarity (NORMAL, ELITE, BOSS). */
