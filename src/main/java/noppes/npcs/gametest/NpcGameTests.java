@@ -20,6 +20,11 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.IntTag;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.BlockHitResult;
@@ -36,6 +41,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import noppes.npcs.CustomNpcs;
 import noppes.npcs.entity.EntityCustomNpc;
 import noppes.npcs.entity.NpcSpawner;
+import noppes.npcs.entity.data.DataInventory;
+import noppes.npcs.entity.data.DropSet;
 import noppes.npcs.faction.FactionChecks;
 import noppes.npcs.faction.FactionRegistry;
 import noppes.npcs.registry.NpcAttachments;
@@ -67,6 +74,9 @@ public final class NpcGameTests {
         FUNCTIONS.register("wand_spawns_npc_with_permission", () -> NpcGameTests::wandSpawnsNpcWithPermission);
         FUNCTIONS.register("faction_registry_has_defaults_and_persists", () -> NpcGameTests::factionRegistryHasDefaultsAndPersists);
         FUNCTIONS.register("player_points_default_and_attach", () -> NpcGameTests::playerPointsDefaultAndAttach);
+        FUNCTIONS.register("inventory_round_trip", () -> NpcGameTests::inventoryRoundTrip);
+        FUNCTIONS.register("legacy_drop_shapes_load", () -> NpcGameTests::legacyDropShapesLoad);
+        FUNCTIONS.register("bad_item_entries_are_skipped", () -> NpcGameTests::badItemEntriesAreSkipped);
     }
 
     private NpcGameTests() {}
@@ -218,6 +228,105 @@ public final class NpcGameTests {
         h.assertFalse(FactionChecks.isAggressiveToPlayer(reg.get(2), h.makeMockPlayer(GameType.CREATIVE)), "creative exempt");
         p.getData(NpcAttachments.FACTION_POINTS).set(2, 600);
         h.assertFalse(FactionChecks.isAggressiveToPlayer(reg.get(2), p), "points from the attachment");
+        h.succeed();
+    }
+
+    /** Saves with registry context (items need it) and wraps the result as input. */
+    private static ValueInput roundTrip(GameTestHelper h, Consumer<ValueOutput> saver) {
+        TagValueOutput out = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, h.getLevel().registryAccess());
+        saver.accept(out);
+        return input(h, out.buildResult());
+    }
+
+    private static ValueInput input(GameTestHelper h, CompoundTag tag) {
+        return TagValueInput.create(ProblemReporter.DISCARDING, h.getLevel().registryAccess(), tag);
+    }
+
+    private static CompoundTag itemEntry(Integer slot, String id, int count) {
+        var t = new CompoundTag();
+        if (slot != null) { t.putByte("Slot", slot.byteValue()); }
+        t.putString("id", id);
+        t.putInt("count", count);
+        return t;
+    }
+
+    private static void inventoryRoundTrip(GameTestHelper h) {
+        var inv = new DataInventory(() -> {});
+        inv.setWeapon(0, new ItemStack(Items.IRON_SWORD));
+        inv.setWeapon(1, new ItemStack(Items.ARROW, 16));
+        inv.setArmor(0, new ItemStack(Items.IRON_HELMET));
+        inv.setArmor(3, new ItemStack(Items.GOLDEN_BOOTS));
+        var ds = new DropSet();
+        ds.item = new ItemStack(Items.EMERALD, 3);
+        ds.setChance(50);
+        ds.setLootMode(2);
+        ds.setAmount(2, 5);
+        inv.drops.add(ds);
+        inv.setMinExp(3);
+        inv.setMaxExp(9);
+        inv.setLootMode(false);
+        inv.setDropType(1);
+        inv.setLimitation(4);
+        inv.setSaveDropsName("bandit");
+        var copy = new DataInventory(() -> {});
+        copy.load(roundTrip(h, inv::save));
+        h.assertValueEqual(Items.IRON_SWORD, copy.getWeapon(0).getItem(), "main hand");
+        h.assertValueEqual(16, copy.getWeapon(1).getCount(), "projectile count");
+        h.assertTrue(copy.getWeapon(2).isEmpty(), "off hand empty");
+        h.assertValueEqual(Items.IRON_HELMET, copy.getArmor(0).getItem(), "head");
+        h.assertValueEqual(Items.GOLDEN_BOOTS, copy.getArmor(3).getItem(), "feet");
+        h.assertValueEqual(1, copy.drops.size(), "drop count");
+        var d = copy.drops.get(0);
+        h.assertValueEqual(Items.EMERALD, d.item.getItem(), "drop item");
+        h.assertValueEqual(3, d.item.getCount(), "drop item count");
+        h.assertValueEqual(50.0, d.chance, "chance");
+        h.assertValueEqual(2, d.lootMode, "loot mode");
+        h.assertValueEqual(2, d.amount[0], "min amount");
+        h.assertValueEqual(5, d.amount[1], "max amount");
+        h.assertValueEqual(3, copy.getMinExp(), "min exp");
+        h.assertValueEqual(9, copy.getMaxExp(), "max exp");
+        h.assertFalse(copy.isLootMode(), "loot mode flag");
+        h.assertValueEqual(1, copy.getDropType(), "drop type");
+        h.assertValueEqual(4, copy.getLimitation(), "limitation");
+        h.assertValueEqual("bandit", copy.getSaveDropsName(), "save drops name");
+        h.succeed();
+    }
+
+    private static void legacyDropShapesLoad(GameTestHelper h) {
+        var drop = new CompoundTag();
+        drop.put("Item", itemEntry(null, "minecraft:emerald", 1));
+        drop.putBoolean("LootMode", true);
+        var amount = new ListTag();
+        amount.add(IntTag.valueOf(2));
+        amount.add(IntTag.valueOf(4));
+        drop.put("Amount", amount);
+        var drops = new ListTag();
+        drops.add(drop);
+        var tag = new CompoundTag();
+        tag.put("NpcInv", drops);
+        tag.putInt("DropType", -5);
+        var inv = new DataInventory(() -> {});
+        inv.load(input(h, tag));
+        h.assertValueEqual(1, inv.drops.size(), "drop loaded");
+        h.assertValueEqual(1, inv.drops.get(0).lootMode, "boolean LootMode true -> 1");
+        h.assertValueEqual(2, inv.drops.get(0).amount[0], "amount min from int list");
+        h.assertValueEqual(4, inv.drops.get(0).amount[1], "amount max from int list");
+        h.assertValueEqual(2, inv.getDropType(), "DropType -5 -> 5 -> 5 % 3 = 2");
+        h.succeed();
+    }
+
+    private static void badItemEntriesAreSkipped(GameTestHelper h) {
+        var weapons = new ListTag();
+        weapons.add(itemEntry(0, "minecraft:nope", 1));
+        weapons.add(itemEntry(null, "minecraft:stick", 1));
+        weapons.add(itemEntry(2, "minecraft:shield", 1));
+        var tag = new CompoundTag();
+        tag.put("Weapons", weapons);
+        var inv = new DataInventory(() -> {});
+        inv.load(input(h, tag));
+        h.assertTrue(inv.getWeapon(0).isEmpty(), "unknown item skipped");
+        h.assertTrue(inv.getWeapon(1).isEmpty(), "entry without Slot skipped");
+        h.assertValueEqual(Items.SHIELD, inv.getWeapon(2).getItem(), "valid entry kept");
         h.succeed();
     }
 }

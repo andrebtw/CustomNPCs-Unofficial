@@ -3,11 +3,8 @@ package noppes.npcs.entity.data;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import com.mojang.serialization.Codec;
-import com.mojang.serialization.Dynamic;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
-import net.minecraft.nbt.ByteTag;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import noppes.npcs.constants.EnumNpcTactics;
@@ -368,9 +365,7 @@ public final class DataAI {
         setStepHeight(in.getFloatOr("StepHeight", stepHeight));
         setTactic(in.getIntOr("TacticalVariant", tactic));
         // Old saves stored DirectLOS as a boolean: true = NORMAL (vanilla sight), false = NONE.
-        boolean legacyBoolean = in.read("DirectLOS", Codec.PASSTHROUGH)
-                .map(Dynamic::getValue).filter(v -> v instanceof ByteTag).isPresent();
-        if (legacyBoolean) {
+        if (LegacyTags.isByte(in, "DirectLOS")) {
             setSeeTarget(in.getBooleanOr("DirectLOS", true) ? EnumSeeTarget.NORMAL.ordinal() : EnumSeeTarget.NONE.ordinal());
         } else {
             setSeeTarget(in.getIntOr("DirectLOS", seeTarget));
