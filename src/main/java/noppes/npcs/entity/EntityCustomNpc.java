@@ -498,7 +498,8 @@ public class EntityCustomNpc extends PathfinderMob {
             super.setTarget(entity);
             return;
         }
-        if (isUntargetablePlayer(entity) || (entity != null && entity == getOwner()) || getTarget() == entity) {
+        if (isUntargetablePlayer(entity) || (entity != null && entity == getOwner()) || getTarget() == entity
+                || !mayTarget(entity)) {
             return;
         }
         if (getTarget() != null && combat.priorityTarget != null) {
@@ -517,7 +518,7 @@ public class EntityCustomNpc extends PathfinderMob {
     /** 1.12.2 {@code setPriorityAttackTarget}: the combat handler's choice, past the priority lock. */
     public void setPriorityTarget(@Nullable LivingEntity entity) {
         if (!isAlive() || getTarget() == entity || isUntargetablePlayer(entity)
-                || (entity != null && entity == getOwner()) || isFriend(entity)) {
+                || (entity != null && entity == getOwner()) || isFriend(entity) || !mayTarget(entity)) {
             return;
         }
         super.setTarget(entity);
@@ -533,7 +534,7 @@ public class EntityCustomNpc extends PathfinderMob {
     /** 1.12.2 {@code onAttack}: take up a fight on someone else's behalf (faction defence). */
     public void onAttack(@Nullable LivingEntity entity) {
         if (!ai.isAiDisabled() && entity != null && entity != this && !isAttacking() && ai.getOnAttack() != 3
-                && entity != getOwner()) {
+                && entity != getOwner() && mayTarget(entity)) {
             super.setTarget(entity);
         }
     }
@@ -544,7 +545,16 @@ public class EntityCustomNpc extends PathfinderMob {
      */
     @Override
     public boolean canAttack(LivingEntity target) {
-        return !ai.isAiDisabled() && target.canBeSeenAsEnemy();
+        return !ai.isAiDisabled() && target.canBeSeenAsEnemy() && mayTarget(target);
+    }
+
+    /**
+     * Whether the NPC may hold this entity as its target. With AttackInvisible false (the 1.12.2
+     * default) invisible entities are refused on every path (user ruling; 1.12.2 only saved the key).
+     * {@code null} (no target) is always allowed.
+     */
+    public boolean mayTarget(@Nullable LivingEntity entity) {
+        return entity == null || ai.isAttackInvisible() || !entity.isInvisible();
     }
 
     @Override

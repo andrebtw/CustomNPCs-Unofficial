@@ -73,6 +73,9 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("provoked_target_death_is_cleared", () -> NpcCombatGameTests::provokedTargetDeathIsCleared);
         FUNCTIONS.register("provoked_target_out_of_range_is_cleared", () -> NpcCombatGameTests::provokedTargetOutOfRangeIsCleared);
         FUNCTIONS.register("defender_target_death_is_cleared", () -> NpcCombatGameTests::defenderTargetDeathIsCleared);
+        FUNCTIONS.register("attack_invisible_false_ignores_invisible_player", () -> NpcCombatGameTests::attackInvisibleFalseIgnoresInvisiblePlayer);
+        FUNCTIONS.register("attack_invisible_true_targets_invisible_player", () -> NpcCombatGameTests::attackInvisibleTrueTargetsInvisiblePlayer);
+        FUNCTIONS.register("target_turning_invisible_is_dropped", () -> NpcCombatGameTests::targetTurningInvisibleIsDropped);
         FUNCTIONS.register("exit_aggressive_npc_hunts_and_hits_survival_player", () -> NpcCombatGameTests::exitAggressiveNpcHuntsAndHitsSurvivalPlayer);
         FUNCTIONS.register("exit_default_npc_is_harmless", () -> NpcCombatGameTests::exitDefaultNpcIsHarmless);
     }
@@ -826,6 +829,53 @@ public final class NpcCombatGameTests {
                 })
                 .thenWaitUntil(() -> h.assertTrue(neighbour.getTarget() == null, "dead foe dropped"))
                 .thenWaitUntil(() -> h.assertFalse(neighbour.isAttacking(), "combat over"))
+                .thenSucceed();
+    }
+
+    static void makeInvisible(net.minecraft.world.entity.LivingEntity entity) {
+        entity.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.INVISIBILITY, 2000));
+    }
+
+    /** AttackInvisible false (1.12.2 default): invisible players are never targeted, not even when they hit. */
+    private static void attackInvisibleFalseIgnoresInvisiblePlayer(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        makeInvisible(player);
+        h.startSequence()
+                .thenIdle(60)
+                .thenExecute(() -> {
+                    h.assertTrue(npc.getTarget() == null, "no target on its own");
+                    hurt(h, npc, npc.damageSources().playerAttack(player), 2);
+                })
+                .thenIdle(20)
+                .thenExecute(() -> {
+                    h.assertTrue(npc.getTarget() == null, "no target after the hit");
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    private static void attackInvisibleTrueTargetsInvisiblePlayer(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        npc.ai.setAttackInvisible(true);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        makeInvisible(player);
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "targets the invisible player"))
+                .thenExecute(player::discard)
+                .thenSucceed();
+    }
+
+    private static void targetTurningInvisibleIsDropped(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        npc.ai.setMoveSpeed(0); // stays out of reach, so the player lives
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "targets the player"))
+                .thenExecute(() -> makeInvisible(player))
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == null, "invisible target dropped"))
+                .thenExecute(() -> h.assertTrue(player.hits.isEmpty() && player.isAlive(), "never reached"))
+                .thenExecute(player::discard)
                 .thenSucceed();
     }
 }

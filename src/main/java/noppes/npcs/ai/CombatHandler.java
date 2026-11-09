@@ -84,7 +84,7 @@ public final class CombatHandler {
 
     public boolean isValidTarget(@Nullable LivingEntity target) {
         return target != null && target.isAlive()
-                && !EntityCustomNpc.isUntargetablePlayer(target)
+                && !EntityCustomNpc.isUntargetablePlayer(target) && npc.mayTarget(target)
                 && npc.isInRange(target, npc.stats.getAggroRange())
                 && npc.level().dimension() == target.level().dimension();
     }

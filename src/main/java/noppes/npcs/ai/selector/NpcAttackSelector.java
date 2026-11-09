@@ -28,7 +28,7 @@ public final class NpcAttackSelector implements Predicate<LivingEntity> {
                 || !npc.isInRange(entity, npc.stats.getAggroRange()) || entity.getHealth() < 0.1f) {
             return false;
         }
-        if (!npc.canNewAttack()) {
+        if (!npc.canNewAttack() || !npc.mayTarget(entity)) {
             return false;
         }
         return nearHome(entity) && wanted(entity)
