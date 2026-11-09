@@ -533,28 +533,30 @@ public class EntityCustomNpc extends PathfinderMob {
 
     /** 1.12.2 {@code onAttack}: take up a fight on someone else's behalf (faction defence). */
     public void onAttack(@Nullable LivingEntity entity) {
-        if (!ai.isAiDisabled() && entity != null && entity != this && !isAttacking() && ai.getOnAttack() != 3
+        if (entity != null && entity != this && !isAttacking() && ai.getOnAttack() != 3
                 && entity != getOwner() && mayTarget(entity)) {
             super.setTarget(entity);
         }
     }
 
     /**
-     * 1.12.2 {@code canAttackClass} is false while AIDisabled, so target goals never pick anyone. NPCs
+     * 1.12.2 {@code canAttackClass} is false while AIDisabled ({@link #mayTarget}), so target goals never
+     * pick anyone and drop a running target. NPCs
      * fight in peaceful too (1.12.2 NPCs are not monsters), so the vanilla peaceful check is skipped.
      */
     @Override
     public boolean canAttack(LivingEntity target) {
-        return !ai.isAiDisabled() && target.canBeSeenAsEnemy() && mayTarget(target);
+        return target.canBeSeenAsEnemy() && mayTarget(target);
     }
 
     /**
-     * Whether the NPC may hold this entity as its target. With AttackInvisible false (the 1.12.2
-     * default) invisible entities are refused on every path (user ruling; 1.12.2 only saved the key).
+     * Whether the NPC may hold this entity as its target, on every path (user rulings): an AIDisabled
+     * NPC takes no target at all (1.12.2 still took the attacker when hit), and with AttackInvisible
+     * false (the 1.12.2 default) invisible entities are refused (1.12.2 only saved the key).
      * {@code null} (no target) is always allowed.
      */
     public boolean mayTarget(@Nullable LivingEntity entity) {
-        return entity == null || ai.isAttackInvisible() || !entity.isInvisible();
+        return entity == null || (!ai.isAiDisabled() && (ai.isAttackInvisible() || !entity.isInvisible()));
     }
 
     @Override

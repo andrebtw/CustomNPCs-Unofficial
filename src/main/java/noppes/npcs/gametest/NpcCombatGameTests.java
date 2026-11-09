@@ -56,6 +56,7 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("melee_knockback_moves_target", () -> NpcCombatGameTests::meleeKnockbackMovesTarget);
         FUNCTIONS.register("no_tactic_still_hits", () -> NpcCombatGameTests::noTacticStillHits);
         FUNCTIONS.register("ai_disabled_never_hits", () -> NpcCombatGameTests::aiDisabledNeverHits);
+        FUNCTIONS.register("ai_disabled_hit_neither_chases_nor_hits", () -> NpcCombatGameTests::aiDisabledHitNeitherChasesNorHits);
         FUNCTIONS.register("default_npc_stays_put", () -> NpcCombatGameTests::defaultNpcStaysPut);
         FUNCTIONS.register("stagger_npc_still_reaches_and_hits", () -> NpcCombatGameTests::staggerNpcStillReachesAndHits);
         FUNCTIONS.register("orbit_npc_keeps_close_and_hits", () -> NpcCombatGameTests::orbitNpcKeepsCloseAndHits);
@@ -107,6 +108,8 @@ public final class NpcCombatGameTests {
         h.assertFalse(npc.canAttack(pig), "AIDisabled NPCs can attack nothing (1.12.2 canAttackClass)");
         npc.onAttack(pig);
         h.assertTrue(npc.getTarget() == null, "onAttack ignored while AIDisabled");
+        npc.setTarget(pig);
+        h.assertTrue(npc.getTarget() == null, "setTarget refused while AIDisabled (user ruling)");
         h.succeed();
     }
 
@@ -520,6 +523,32 @@ public final class NpcCombatGameTests {
             player.discard();
             h.succeed();
         });
+    }
+
+    /** User ruling: a hit AIDisabled NPC takes no target, so it neither chases nor hits. */
+    private static void aiDisabledHitNeitherChasesNorHits(GameTestHelper h) {
+        var npc = npc(h, -3, 0);
+        npc.advanced.setFactionId(1);
+        npc.ai.setAiDisabled(true);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        Vec3[] start = new Vec3[1];
+        h.startSequence()
+                .thenIdle(10) // let it land
+                .thenExecute(() -> {
+                    start[0] = npc.position();
+                    h.assertTrue(hurt(h, npc, npc.damageSources().playerAttack(player), 2), "hurt");
+                    h.assertTrue(npc.getTarget() == null, "no target from the hit");
+                })
+                .thenIdle(60)
+                .thenExecute(() -> {
+                    h.assertTrue(npc.getTarget() == null, "no target through the hurt-by goal");
+                    // The hit's knockback pushes it away (-x); chasing would bring it towards the player.
+                    h.assertTrue(npc.getX() <= start[0].x + 0.1d, "did not chase: x " + (npc.getX() - start[0].x));
+                    h.assertTrue(npc.getNavigation().isDone(), "no path");
+                    h.assertTrue(player.hits.isEmpty(), "never hit");
+                    player.discard();
+                })
+                .thenSucceed();
     }
 
     private static void defaultNpcStaysPut(GameTestHelper h) {
