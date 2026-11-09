@@ -23,6 +23,14 @@ import net.minecraft.world.entity.ai.goal.GoalSelector;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.core.Holder;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectInstance;
+import noppes.npcs.ai.attack.AbstractTacticGoal;
+import noppes.npcs.ai.attack.NoTacticGoal;
+import noppes.npcs.ai.attack.OnslaughtGoal;
+import noppes.npcs.entity.data.DataMelee;
+import noppes.npcs.util.NpcMobEffects;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.player.Player;
@@ -76,6 +84,13 @@ public class EntityCustomNpc extends PathfinderMob {
     public final DataAdvanced advanced = new DataAdvanced(this::applyAdvanced);
     public final CombatHandler combat = new CombatHandler(this);
 
+    /** The attack tactic goal (1.12.2 {@code aiAttackTarget}); null when the NPC has none. */
+    @Nullable
+    public AbstractTacticGoal tacticGoal;
+    /** The commander NPC this one follows into battle (1.12.2 {@code aiOwnerNPC}). */
+    @Nullable
+    public EntityCustomNpc aiOwnerNpc;
+
     /** Set when AI-relevant data changes; the goals are rebuilt on the next server tick (1.12.2 updateAI). */
     private boolean goalsDirty = true;
 
@@ -128,6 +143,8 @@ public class EntityCustomNpc extends PathfinderMob {
         goalsDirty = false;
         clearGoals(goalSelector);
         clearGoals(targetSelector);
+        tacticGoal = null;
+        aiOwnerNpc = null;
         goalSelector.addGoal(0, new FloatGoal(this));
         goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 8f));
         goalSelector.addGoal(9, new RandomLookAroundGoal(this));
@@ -138,6 +155,23 @@ public class EntityCustomNpc extends PathfinderMob {
         targetSelector.addGoal(0, new NpcClearTargetGoal(this));
         targetSelector.addGoal(1, new HurtByTargetGoal(this));
         targetSelector.addGoal(2, new NpcClosestTargetGoal(this, 4, new NpcAttackSelector(this)));
+        addResponseGoals();
+    }
+
+    /** 1.12.2 {@code setResponse()}: the attack goal for OnAttack and the tactic. */
+    private void addResponseGoals() {
+        if (ai.isAiDisabled()) {
+            // 1.12.2 keeps an Onslaught goal; doHurtTarget refuses every hit.
+            tacticGoal = new OnslaughtGoal(this);
+        } else if (ai.getOnAttack() == 0) {
+            tacticGoal = switch (ai.getTactic()) {
+                case 6 -> new NoTacticGoal(this);
+                default -> new OnslaughtGoal(this);
+            };
+        }
+        if (tacticGoal != null) {
+            goalSelector.addGoal(3, tacticGoal);
+        }
     }
 
     private static void clearGoals(GoalSelector selector) {
@@ -298,7 +332,50 @@ public class EntityCustomNpc extends PathfinderMob {
 
     /** Whether the attack goal lets the target goals pick a new target (HitAndRun says no while running). */
     public boolean canNewAttack() {
-        return true;
+        return tacticGoal == null || tacticGoal.canNewAttack();
+    }
+
+    /**
+     * 1.12.2 {@code canSee} through the NPC's {@code canEntityBeSeen}: never beyond aggro range;
+     * DirectLOS NONE needs no line of sight, every other mode uses the vanilla line of sight.
+     */
+    public boolean canSee(Entity entity) {
+        if (distanceTo(entity) > stats.getAggroRange()) {
+            return false;
+        }
+        return ai.getSeeTarget() == DataAI.SEE_TARGET_NONE || getSensing().hasLineOfSight(entity);
+    }
+
+    /**
+     * 1.12.2 {@code tryAttackEntityAsMob} (no animation hitboxes, no scripted event): MeleeStrength
+     * through a mob attack, short delays skip the target's hurt cooldown, the potion effect is applied
+     * on every swing, and KnockBack pushes the target away on a hit.
+     */
+    @Override
+    public boolean doHurtTarget(ServerLevel level, Entity target) {
+        if (ai.isAiDisabled() || target == null || !target.isAlive()) {
+            return false;
+        }
+        DataMelee melee = stats.melee;
+        if (melee.getDelay() < 10) {
+            target.invulnerableTime = 0;
+        }
+        boolean hit = target.hurtServer(level, damageSources().mobAttack(this), melee.getStrength());
+        if (hit) {
+            setLastHurtMob(target);
+            if (melee.getKnockback() > 0 && target instanceof LivingEntity living) {
+                living.knockback(0.2d * melee.getKnockback(), getX() - target.getX(), getZ() - target.getZ());
+            }
+        }
+        if (melee.getEffectType() == 1) {
+            target.igniteForSeconds(melee.getEffectTime());
+        } else if (melee.getEffectType() != 0 && target instanceof LivingEntity living) {
+            Holder<MobEffect> effect = NpcMobEffects.byLegacyId(melee.getEffectType());
+            if (effect != null) {
+                living.addEffect(new MobEffectInstance(effect, melee.getEffectTime() * 20, melee.getEffectStrength()), this);
+            }
+        }
+        return hit;
     }
 
     /** Seam for the 1.12.2 killed state (stage 2b-3). */
@@ -469,7 +546,7 @@ public class EntityCustomNpc extends PathfinderMob {
 
     /** The tactic's damage veto (1.12.2 {@code aiAttackTarget.damaged()}, Dodge). */
     private boolean tacticRefusesDamage() {
-        return false;
+        return tacticGoal != null && tacticGoal.damaged();
     }
 
     /** 1.12.2 {@code damageEntity}: every applied hit feeds the combat handler. */

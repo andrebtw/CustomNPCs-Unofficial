@@ -32,7 +32,7 @@ public final class NpcAttackSelector implements Predicate<LivingEntity> {
             return false;
         }
         return nearHome(entity) && wanted(entity)
-                && (npc.ai.getSeeTarget() == DataAI.SEE_TARGET_NONE || npc.getSensing().hasLineOfSight(entity));
+                && (npc.ai.getSeeTarget() == DataAI.SEE_TARGET_NONE || npc.canSee(entity));
     }
 
     /** With ReturnToStart, only targets near home (start position or current path point). */

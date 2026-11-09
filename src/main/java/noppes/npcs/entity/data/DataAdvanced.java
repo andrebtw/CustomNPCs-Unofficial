@@ -102,7 +102,7 @@ public final class DataAdvanced {
         if (self.isKilled() || !defendFaction || attacked.equals(attacker)) {
             return;
         }
-        boolean canSee = self.getSensing().hasLineOfSight(attacked);
+        boolean canSee = self.canSee(attacked);
         if (!canSee && throughWalls) {
             canSee = self.distanceTo(attacked) <= self.stats.getAggroRange();
         }

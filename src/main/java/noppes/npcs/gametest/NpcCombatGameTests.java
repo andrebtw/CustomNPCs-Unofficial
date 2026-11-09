@@ -49,6 +49,14 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("defend_faction_recruits_neighbour", () -> NpcCombatGameTests::defendFactionRecruitsNeighbour);
         FUNCTIONS.register("defend_faction_without_through_walls_needs_sight", () -> NpcCombatGameTests::defendFactionWithoutThroughWallsNeedsSight);
         FUNCTIONS.register("hit_registers_aggressor", () -> NpcCombatGameTests::hitRegistersAggressor);
+        FUNCTIONS.register("rush_npc_walks_to_and_hits_player", () -> NpcCombatGameTests::rushNpcWalksToAndHitsPlayer);
+        FUNCTIONS.register("melee_delay_respected", () -> NpcCombatGameTests::meleeDelayRespected);
+        FUNCTIONS.register("melee_fire_effect_applied", () -> NpcCombatGameTests::meleeFireEffectApplied);
+        FUNCTIONS.register("melee_potion_effect_applied", () -> NpcCombatGameTests::meleePotionEffectApplied);
+        FUNCTIONS.register("melee_knockback_moves_target", () -> NpcCombatGameTests::meleeKnockbackMovesTarget);
+        FUNCTIONS.register("no_tactic_still_hits", () -> NpcCombatGameTests::noTacticStillHits);
+        FUNCTIONS.register("ai_disabled_never_hits", () -> NpcCombatGameTests::aiDisabledNeverHits);
+        FUNCTIONS.register("default_npc_stays_put", () -> NpcCombatGameTests::defaultNpcStaysPut);
     }
 
     private NpcCombatGameTests() {}
@@ -376,5 +384,119 @@ public final class NpcCombatGameTests {
         h.assertTrue(npc.combat.priorityTarget == player, "first attacker is the priority target");
         player.discard();
         h.succeed();
+    }
+
+    /** Waits until the player took a hit, then checks it came from melee range. */
+    private static void huntAndHit(GameTestHelper h, EntityCustomNpc npc, TestPlayer player) {
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertFalse(player.hits.isEmpty(), "player was hit"))
+                .thenExecute(() -> {
+                    h.assertTrue(player.getHealth() < player.getMaxHealth(), "player lost health");
+                    double reach = npc.stats.melee.getRange() + 1.0;
+                    h.assertTrue(npc.distanceTo(player) <= reach, "hit from melee range: " + npc.distanceTo(player));
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    private static void rushNpcWalksToAndHitsPlayer(GameTestHelper h) {
+        var npc = aggressive(h, -4, 0);
+        npc.stats.melee.setStrength(3);
+        huntAndHit(h, npc, TestPlayer.spawn(h, GameType.SURVIVAL, offset(4, 0)));
+    }
+
+    private static void noTacticStillHits(GameTestHelper h) {
+        var npc = aggressive(h, -4, 0);
+        npc.ai.setTactic(6);
+        huntAndHit(h, npc, TestPlayer.spawn(h, GameType.SURVIVAL, offset(4, 0)));
+    }
+
+    private static void meleeDelayRespected(GameTestHelper h) {
+        var npc = aggressive(h, -1, 0);
+        npc.stats.melee.setDelay(40);
+        npc.stats.melee.setStrength(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(1, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(player.hits.size() >= 3, "three hits"))
+                .thenExecute(() -> {
+                    for (int i = 1; i < player.hits.size(); i++) {
+                        long gap = player.hits.get(i) - player.hits.get(i - 1);
+                        h.assertTrue(gap >= 40, "hits at least AttackSpeed apart, was " + gap);
+                    }
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    private static void meleeFireEffectApplied(GameTestHelper h) {
+        var npc = aggressive(h, -1, 0);
+        npc.stats.melee.setEffectType(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(1, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertFalse(player.hits.isEmpty(), "hit"))
+                .thenExecute(() -> {
+                    h.assertTrue(player.getRemainingFireTicks() > 0, "set on fire");
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    private static void meleePotionEffectApplied(GameTestHelper h) {
+        var npc = aggressive(h, -1, 0);
+        npc.stats.melee.setEffectType(2); // 1.12.2 PotionEffectType POISON
+        npc.stats.melee.setEffectStrength(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(1, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertFalse(player.hits.isEmpty(), "hit"))
+                .thenExecute(() -> {
+                    var effect = player.getEffect(net.minecraft.world.effect.MobEffects.POISON);
+                    h.assertTrue(effect != null, "poisoned");
+                    h.assertValueEqual(1, effect.getAmplifier(), "amplifier = PotionAmp");
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    private static void meleeKnockbackMovesTarget(GameTestHelper h) {
+        var weak = npc(h, -6, -4);
+        var strong = npc(h, -6, 4);
+        strong.stats.melee.setKnockback(3);
+        var pigWeak = h.spawnWithNoFreeWill(EntityType.PIG, offset(-5, -4));
+        var pigStrong = h.spawnWithNoFreeWill(EntityType.PIG, offset(-5, 4));
+        h.runAfterDelay(2, () -> {
+            h.assertTrue(weak.doHurtTarget(h.getLevel(), pigWeak), "weak hit");
+            h.assertTrue(strong.doHurtTarget(h.getLevel(), pigStrong), "strong hit");
+            double vWeak = pigWeak.getDeltaMovement().horizontalDistance();
+            double vStrong = pigStrong.getDeltaMovement().horizontalDistance();
+            h.assertTrue(vStrong > vWeak + 0.2, "KnockBack pushes harder: " + vWeak + " vs " + vStrong);
+            h.assertTrue(pigStrong.getDeltaMovement().x > 0, "pushed away from the NPC");
+            h.succeed();
+        });
+    }
+
+    private static void aiDisabledNeverHits(GameTestHelper h) {
+        var npc = aggressive(h, -1, 0);
+        npc.ai.setAiDisabled(true);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(1, 0));
+        h.runAfterDelay(2, () -> h.assertFalse(npc.doHurtTarget(h.getLevel(), player), "doHurtTarget refused"));
+        h.runAfterDelay(100, () -> {
+            h.assertTrue(player.hits.isEmpty(), "never hit");
+            player.discard();
+            h.succeed();
+        });
+    }
+
+    private static void defaultNpcStaysPut(GameTestHelper h) {
+        var npc = npc(h);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(1.5, 0));
+        h.runAfterDelay(20, () -> {
+            var start = npc.position();
+            h.runAfterDelay(60, () -> {
+                h.assertTrue(npc.position().subtract(start).horizontalDistance() < 0.1, "did not move: " + start + " -> " + npc.position());
+                h.assertTrue(player.hits.isEmpty(), "player unharmed");
+                player.discard();
+                h.succeed();
+            });
+        });
     }
 }

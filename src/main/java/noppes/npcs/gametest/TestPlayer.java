@@ -1,7 +1,11 @@
 package noppes.npcs.gametest;
 
 import com.mojang.authlib.GameProfile;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.Vec3;
@@ -15,6 +19,8 @@ import net.minecraft.world.entity.player.Player;
 public final class TestPlayer extends Player {
 
     public GameType mode;
+    /** Game times at which a hit got through. */
+    public final List<Long> hits = new ArrayList<>();
 
     private TestPlayer(GameTestHelper h, GameType mode) {
         super(h.getLevel(), new GameProfile(UUID.randomUUID(), "test-npc-target"));
@@ -37,5 +43,14 @@ public final class TestPlayer extends Player {
     @Override
     public boolean isClientAuthoritative() {
         return false;
+    }
+
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        boolean hurt = super.hurtServer(level, source, amount);
+        if (hurt) {
+            hits.add(level.getGameTime());
+        }
+        return hurt;
     }
 }
