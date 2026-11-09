@@ -70,6 +70,9 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("pounce_leaps_at_mid_range", () -> NpcCombatGameTests::pounceLeapsAtMidRange);
         FUNCTIONS.register("on_attack_nothing_has_no_attack_goal", () -> NpcCombatGameTests::onAttackNothingHasNoAttackGoal);
         FUNCTIONS.register("calmdown_keeps_hit_and_run_near_home", () -> NpcCombatGameTests::calmdownKeepsHitAndRunNearHome);
+        FUNCTIONS.register("provoked_target_death_is_cleared", () -> NpcCombatGameTests::provokedTargetDeathIsCleared);
+        FUNCTIONS.register("provoked_target_out_of_range_is_cleared", () -> NpcCombatGameTests::provokedTargetOutOfRangeIsCleared);
+        FUNCTIONS.register("defender_target_death_is_cleared", () -> NpcCombatGameTests::defenderTargetDeathIsCleared);
         FUNCTIONS.register("exit_aggressive_npc_hunts_and_hits_survival_player", () -> NpcCombatGameTests::exitAggressiveNpcHuntsAndHitsSurvivalPlayer);
         FUNCTIONS.register("exit_default_npc_is_harmless", () -> NpcCombatGameTests::exitDefaultNpcIsHarmless);
     }
@@ -757,6 +760,57 @@ public final class NpcCombatGameTests {
                     h.assertFalse(ran[0], "never ran away from home");
                     player.discard();
                 })
+                .thenSucceed();
+    }
+
+    /** The player hits the NPC first (priority target set), then dies: the NPC must let go. */
+    private static void provokedTargetDeathIsCleared(GameTestHelper h) {
+        provokedTargetLost(h, (npc, player) -> player.kill(h.getLevel()));
+    }
+
+    private static void provokedTargetOutOfRangeIsCleared(GameTestHelper h) {
+        provokedTargetLost(h, (npc, player) -> player.setPos(player.getX() + 40, player.getY(), player.getZ()));
+    }
+
+    private static void provokedTargetLost(GameTestHelper h, java.util.function.BiConsumer<EntityCustomNpc, TestPlayer> lose) {
+        var npc = aggressive(h, -3, 0);
+        npc.stats.melee.setStrength(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        var other = TestPlayer.spawn(h, GameType.SURVIVAL, offset(0, 12));
+        other.mode = GameType.CREATIVE; // out of the way until the first fight is over
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "targets the player"))
+                .thenExecute(() -> {
+                    hurt(h, npc, npc.damageSources().playerAttack(player), 1);
+                    h.assertTrue(npc.combat.priorityTarget == player, "provoked");
+                    lose.accept(npc, player);
+                })
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == null, "lost target dropped"))
+                .thenWaitUntil(() -> h.assertFalse(npc.isAttacking(), "combat over"))
+                .thenExecute(() -> other.mode = GameType.SURVIVAL)
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == other, "free to pick a new target"))
+                .thenExecute(() -> {
+                    player.discard();
+                    other.discard();
+                })
+                .thenSucceed();
+    }
+
+    /** A DefendFaction NPC takes up a fight through onAttack (never hit itself); the foe then dies. */
+    private static void defenderTargetDeathIsCleared(GameTestHelper h) {
+        var victim = npc(h, -3, 0);
+        var neighbour = npc(h, 3, 0);
+        neighbour.advanced.setDefendFaction(true);
+        var husk = h.spawn(EntityType.HUSK, CENTER.north(5));
+        h.startSequence()
+                .thenIdle(2)
+                .thenExecute(() -> {
+                    hurt(h, victim, victim.damageSources().mobAttack(husk), 2);
+                    h.assertTrue(neighbour.getTarget() == husk, "defends");
+                    husk.kill(h.getLevel());
+                })
+                .thenWaitUntil(() -> h.assertTrue(neighbour.getTarget() == null, "dead foe dropped"))
+                .thenWaitUntil(() -> h.assertFalse(neighbour.isAttacking(), "combat over"))
                 .thenSucceed();
     }
 }

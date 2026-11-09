@@ -118,8 +118,10 @@ retaliation); melee per `DataMelee` (strength, delay, range, knockback, fire/pot
 `CalmdownRange` in HitAndRun. Combat GameTests run in a 33x33 arena with an in-level mock player.
 Seams left: `getOwner()`/`isFollower()` (roles), `isKilled()` (2b-3), `AbstractTacticGoal.isRanged()`
 (2b-4). Not ported (no 1.12.2 behaviour or later stages): `AttackInvisible` (only load/save in
-1.12.2), the client-side `DirectLOS` modes other than NONE (they use the vanilla line of sight),
-scripted NPC events, attack lines, animations.
+1.12.2), scripted NPC events, attack lines, animations. `DirectLOS`: only NONE (no line of sight
+needed) has its 1.12.2 server behaviour; DEAF, WARY, CALM, REALISTIC and BLIND use the vanilla line
+of sight for now, although 1.12.2 `canEntityBeSeen` gives them server behaviour (DEAF never sees,
+BLIND senses through walls, the others add a view cone and chances). No stage owns them yet.
 Still owed by 2b:
 - **2b-3 damage, death, respawn:** resistances, `PotionImmune`, `IgnoreCobweb`, `ChanceBlockDamage`,
   regen, `BurnInSun`, the killed state, drops per `DataInventory`/`LootMode` (corpse loot via the

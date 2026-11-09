@@ -521,6 +521,13 @@ public class EntityCustomNpc extends PathfinderMob {
         super.setTarget(entity);
     }
 
+    /** Clears a target that is no longer valid, past the priority lock (the combat reset calls it). */
+    public void dropTarget() {
+        if (getTarget() != null) {
+            super.setTarget(null);
+        }
+    }
+
     /** 1.12.2 {@code onAttack}: take up a fight on someone else's behalf (faction defence). */
     public void onAttack(@Nullable LivingEntity entity) {
         if (!ai.isAiDisabled() && entity != null && entity != this && !isAttacking() && ai.getOnAttack() != 3

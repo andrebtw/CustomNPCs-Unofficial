@@ -111,8 +111,8 @@ public final class HitAndRunGoal extends AbstractTacticGoal {
     /** Ends a run: gives the target back and stops moving. Outside a run it only stops moving. */
     private void clearTarget() {
         runPos = null;
-        if (targetIn != null) {
-            npc.setTarget(targetIn);
+        if (targetIn != null && npc.combat.isValidTarget(targetIn)) {
+            npc.setTarget(targetIn); // a target that died or left during the run is not taken back
         }
         targetIn = null;
         npc.getNavigation().stop();

@@ -121,6 +121,11 @@ public final class CombatHandler {
         if (!shouldCombatContinue()) {
             if (combatResetTimer++ > 40) {
                 reset();
+                // 1.12.2 relied on the target goals to drop a lost target, but the priority lock
+                // refuses them while a priority target exists, and targets set outside a target goal
+                // (faction defence, commander, hit-and-run) have no goal to drop them. Without this
+                // the NPC kept a dead or departed target for good.
+                npc.dropTarget();
             }
             return;
         }
