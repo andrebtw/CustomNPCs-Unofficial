@@ -144,8 +144,8 @@ Still owed by 2b:
   `DropSet`s and are overwritten on save; `Faction.description` defaults to `""` instead of
   `{"text":""}`; `FactionRegistry` `lastId` can load as 0; `DataAI.getMovingPath()` exposes the live
   `int[]` arrays; int `Slot` tags are masked with `& 0xFF`.
-- Not yet checked by hand: the 2b-1 gear render check (`runClient`), the 2a wand check, and the
-  2b-2 combat check (an aggressive NPC hunts a survival player; orbit, retreat, default, creative).
+- Checked by hand in `runClient` (2026-11-09): the 2a wand check, the 2b-1 gear render check and the
+  2b-2 combat check.
 
 1. Copy bucket A (`constants`, `markovnames`).
 2. `EntityCustomNpc extends PathfinderMob`, entity type, attributes, spawn egg.
