@@ -52,4 +52,20 @@ class DataAdvancedTest {
         a.load(in(new CompoundTag()));
         assertEquals(7, a.getFactionId());
     }
+
+    @Test
+    void throughWallsDefaultsTrueAndRoundTrips() {
+        var a = new DataAdvanced(() -> {});
+        assertTrue(a.isThroughWalls());
+        a.setThroughWalls(false);
+        var t = save(a::save);
+        assertTrue(t.contains("ThroughWalls"));
+        assertFalse(t.getBooleanOr("ThroughWalls", true));
+        var b = new DataAdvanced(() -> {});
+        b.load(in(t));
+        assertFalse(b.isThroughWalls());
+        // 1.12.2 DataAdvanced.readToNBT: an absent ThroughWalls key means true.
+        b.load(in(new CompoundTag()));
+        assertTrue(b.isThroughWalls());
+    }
 }

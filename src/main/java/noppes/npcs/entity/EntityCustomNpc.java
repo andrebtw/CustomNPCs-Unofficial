@@ -1,6 +1,7 @@
 package noppes.npcs.entity;
 
 import java.util.Random;
+import javax.annotation.Nullable;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -11,6 +12,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityEquipment;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -155,7 +157,10 @@ public class EntityCustomNpc extends PathfinderMob {
         if (level().isClientSide()) {
             return;
         }
-        entityData.set(DATA_FACTION, advanced.getFactionId());
+        // The effective faction (an unknown id falls back to the first one), as 1.12.2 synced
+        // faction.id. A later registry change is picked up on the next applyAdvanced.
+        Faction faction = getFaction();
+        entityData.set(DATA_FACTION, faction == null ? advanced.getFactionId() : faction.id);
     }
 
     private ItemStack inventoryStack(EquipmentSlot slot) {
@@ -193,11 +198,33 @@ public class EntityCustomNpc extends PathfinderMob {
     }
 
     /**
-     * The NPC's faction (server side). An id missing from the registry falls back to the first
-     * faction without changing the saved FactionID.
+     * The NPC's faction. An id missing from the registry falls back to the first faction without
+     * changing the saved FactionID. Null on the client, where the registry does not exist; use
+     * {@link #getSyncedFaction()} there.
      */
+    @Nullable
     public Faction getFaction() {
-        return FactionRegistry.get(((ServerLevel) level()).getServer()).getOrFirst(advanced.getFactionId());
+        if (!(level() instanceof ServerLevel serverLevel)) {
+            return null;
+        }
+        return FactionRegistry.get(serverLevel.getServer()).getOrFirst(advanced.getFactionId());
+    }
+
+    /**
+     * Seam for 1.12.2 getOwner() (scene owner, follower/companion roles, follower job). Roles and
+     * jobs are not ported yet, so an NPC never has an owner.
+     */
+    @Nullable
+    public LivingEntity getOwner() {
+        return null;
+    }
+
+    /**
+     * Vanilla raises a slot's drop chance to 2 when the mob picks an item up. NPC gear never drops
+     * through vanilla (DataInventory owns drops), so the chance stays 0.
+     */
+    @Override
+    public void setGuaranteedDrop(EquipmentSlot slot) {
     }
 
     public int getSyncedFaction() {

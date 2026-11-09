@@ -239,4 +239,21 @@ class CombatDataTest {
         r.setAccuracy(61);
         assertEquals(2, n.get());
     }
+
+    @Test
+    void delayRngStaysInRange() {
+        var m = new DataMelee(() -> {});
+        m.setDelay(20);
+        java.util.Set<Integer> seen = new java.util.TreeSet<>();
+        for (long seed = 0; seed < 200; seed++) {
+            int d = m.getDelayRNG(net.minecraft.util.RandomSource.create(seed));
+            assertTrue(d >= 20 && d <= 22, "delay " + d);
+            seen.add(d);
+        }
+        assertEquals(java.util.Set.of(20, 21, 22), seen);
+        m.setDelay(10);
+        assertEquals(10, m.getDelayRNG(net.minecraft.util.RandomSource.create(1)));
+        m.setDelay(120);
+        assertEquals(120, m.getDelayRNG(net.minecraft.util.RandomSource.create(1)));
+    }
 }

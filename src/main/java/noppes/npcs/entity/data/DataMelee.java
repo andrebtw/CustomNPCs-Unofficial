@@ -1,5 +1,6 @@
 package noppes.npcs.entity.data;
 
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 
@@ -33,6 +34,15 @@ public final class DataMelee {
     public int getEffectTime() { return effectTime; }
     public int getEffectStrength() { return effectStrength; }
     public double getRange() { return range; }
+
+    /** 1.12.2 getDelayRNG: the delay plus up to 15% random extra, for delays between 10 and 120. */
+    public int getDelayRNG(RandomSource rng) {
+        int result = delay;
+        if (delay < 120 && delay > 10) {
+            result += rng.nextInt((int) (delay * 0.15d));
+        }
+        return result;
+    }
 
     public void setStrength(int value) {
         if (value != strength) { strength = value; onChange.run(); }

@@ -88,6 +88,8 @@ public final class NpcGameTests {
         FUNCTIONS.register("start_pos_is_set_when_added", () -> NpcGameTests::startPosIsSetWhenAdded);
         FUNCTIONS.register("summoned_vanilla_equipment_is_kept", () -> NpcGameTests::summonedVanillaEquipmentIsKept);
         FUNCTIONS.register("data_merge_equipment_is_kept", () -> NpcGameTests::dataMergeEquipmentIsKept);
+        FUNCTIONS.register("unknown_faction_syncs_effective_id", () -> NpcGameTests::unknownFactionSyncsEffectiveId);
+        FUNCTIONS.register("guaranteed_drop_keeps_chance_zero", () -> NpcGameTests::guaranteedDropKeepsChanceZero);
     }
 
     private NpcGameTests() {}
@@ -479,6 +481,23 @@ public final class NpcGameTests {
         h.assertTrue(copy.getItemBySlot(EquipmentSlot.HEAD).is(Items.DIAMOND_HELMET), "merged helmet kept");
         h.assertTrue(copy.inventory.getArmor(0).is(Items.DIAMOND_HELMET), "helmet in inventory");
         h.assertTrue(copy.getMainHandItem().is(Items.IRON_SWORD), "existing gear untouched");
+        h.succeed();
+    }
+
+    private static void unknownFactionSyncsEffectiveId(GameTestHelper h) {
+        var tag = new CompoundTag();
+        tag.putInt("FactionID", 99);
+        var npc = loadNpc(h, tag);
+        h.assertValueEqual(0, npc.getSyncedFaction(), "synced id is the fallback faction");
+        h.assertValueEqual(99, saveNpc(h, npc).getIntOr("FactionID", -1), "saved id kept");
+        h.succeed();
+    }
+
+    /** Item pickup calls Mob.setGuaranteedDrop; NPC gear must still never drop through vanilla. */
+    private static void guaranteedDropKeepsChanceZero(GameTestHelper h) {
+        var npc = h.spawn(NpcEntities.CUSTOM_NPC.get(), CENTER);
+        npc.setGuaranteedDrop(EquipmentSlot.MAINHAND);
+        h.assertValueEqual(0f, npc.getDropChances().byEquipment(EquipmentSlot.MAINHAND), "drop chance");
         h.succeed();
     }
 }

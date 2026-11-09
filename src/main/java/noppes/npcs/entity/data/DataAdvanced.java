@@ -19,6 +19,7 @@ public final class DataAdvanced {
     private int factionId = 0;
     private boolean attackOtherFactions = false;
     private boolean defendFaction = false;
+    private boolean throughWalls = true;
     private final Set<Integer> attackFactions = new TreeSet<>();
     private final Set<Integer> friendFactions = new TreeSet<>();
     private CompoundTag factionPoints = new CompoundTag();
@@ -30,6 +31,8 @@ public final class DataAdvanced {
     public int getFactionId() { return factionId; }
     public boolean isAttackOtherFactions() { return attackOtherFactions; }
     public boolean isDefendFaction() { return defendFaction; }
+    /** Faction defence also reacts to attacks it cannot see, within aggro range. */
+    public boolean isThroughWalls() { return throughWalls; }
     public Set<Integer> getAttackFactions() { return Collections.unmodifiableSet(attackFactions); }
     public Set<Integer> getFriendFactions() { return Collections.unmodifiableSet(friendFactions); }
     /** Kill-point options; round-trip only until the controllers stage. */
@@ -45,6 +48,10 @@ public final class DataAdvanced {
 
     public void setDefendFaction(boolean value) {
         if (value != defendFaction) { defendFaction = value; onChange.run(); }
+    }
+
+    public void setThroughWalls(boolean value) {
+        if (value != throughWalls) { throughWalls = value; onChange.run(); }
     }
 
     public void setAttackFactions(Set<Integer> value) {
@@ -63,6 +70,7 @@ public final class DataAdvanced {
         out.putInt("FactionID", factionId);
         out.putBoolean("AttackOtherFactions", attackOtherFactions);
         out.putBoolean("DefendFaction", defendFaction);
+        out.putBoolean("ThroughWalls", throughWalls);
         out.store("FactionPoints", CompoundTag.CODEC, factionPoints);
         Faction.saveIntegerSet(out, "AttackFactions", attackFactions);
         Faction.saveIntegerSet(out, "FrendFactions", friendFactions);
@@ -72,6 +80,8 @@ public final class DataAdvanced {
         setFactionId(in.getIntOr("FactionID", factionId));
         setAttackOtherFactions(in.getBooleanOr("AttackOtherFactions", attackOtherFactions));
         setDefendFaction(in.getBooleanOr("DefendFaction", defendFaction));
+        // 1.12.2 readToNBT: an absent ThroughWalls key means true, not "keep the current value".
+        setThroughWalls(in.getBooleanOr("ThroughWalls", true));
         in.read("FactionPoints", CompoundTag.CODEC).ifPresent(t -> factionPoints = t);
         Set<Integer> attack = new TreeSet<>(attackFactions);
         Faction.loadIntegerSet(in, "AttackFactions", attack);
