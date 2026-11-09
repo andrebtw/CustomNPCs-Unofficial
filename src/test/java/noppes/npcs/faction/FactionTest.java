@@ -128,4 +128,16 @@ class FactionTest {
         assertEquals(640, copy.get(new Faction(2, "a", 0, 0)));
         assertEquals(1, ((CompoundTag) tag).getListOrEmpty("FactionData").size());
     }
+
+    /** 1.12.2 NPCAttackSelector: only with AttackOtherFactions, then Faction.isAggressiveToNpc. */
+    @Test
+    void npcAggressionNeedsAttackOtherFactions() {
+        var aggressive = new Faction(2, "a", 0, 0);
+        aggressive.attackFactions.add(0);
+        assertFalse(FactionChecks.isAggressiveToNpc(aggressive, false, 0, Set.of()));
+        assertTrue(FactionChecks.isAggressiveToNpc(aggressive, true, 0, Set.of()));
+        var friendly = new Faction(0, "f", 0, 2000);
+        assertFalse(FactionChecks.isAggressiveToNpc(friendly, true, 2, Set.of()));
+        assertTrue(FactionChecks.isAggressiveToNpc(friendly, true, 2, Set.of(0)), "the other NPC attacks us");
+    }
 }

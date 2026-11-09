@@ -31,6 +31,7 @@ public final class CombatHandler {
     private final EntityCustomNpc npc;
     private int combatResetTimer = 0;
     private int delay = 10;
+    private int lastCheckTick = -10;
 
     public CombatHandler(EntityCustomNpc npc) {
         this.npc = npc;
@@ -38,9 +39,12 @@ public final class CombatHandler {
 
     /** True when the current target should be dropped: no valid aggressor is worth attacking. */
     public boolean checkTarget() {
-        if (aggressors.isEmpty() || npc.tickCount % 10 != 0) {
+        // 1.12.2 checked on ticksExisted % 10; goals are evaluated every other tick here, which
+        // would never line up for odd entity ids, so the 10-tick gate keeps its own clock.
+        if (aggressors.isEmpty() || npc.tickCount - lastCheckTick < 10) {
             return false;
         }
+        lastCheckTick = npc.tickCount;
         LivingEntity target = npc.getTarget();
         double current = 0.0d;
         if (isValidTarget(target)) {

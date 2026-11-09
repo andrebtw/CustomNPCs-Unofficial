@@ -31,12 +31,32 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("set_target_refuses_creative_player", () -> NpcCombatGameTests::setTargetRefusesCreativePlayer);
         FUNCTIONS.register("priority_target_locks_target", () -> NpcCombatGameTests::priorityTargetLocksTarget);
         FUNCTIONS.register("in_range_is_a_box", () -> NpcCombatGameTests::inRangeIsABox);
+        FUNCTIONS.register("default_npc_ignores_survival_player", () -> NpcCombatGameTests::defaultNpcIgnoresSurvivalPlayer);
+        FUNCTIONS.register("aggressive_npc_targets_survival_player", () -> NpcCombatGameTests::aggressiveNpcTargetsSurvivalPlayer);
+        FUNCTIONS.register("creative_and_spectator_never_targeted", () -> NpcCombatGameTests::creativeAndSpectatorNeverTargeted);
+        FUNCTIONS.register("target_switching_to_creative_is_dropped", () -> NpcCombatGameTests::targetSwitchingToCreativeIsDropped);
+        FUNCTIONS.register("attack_other_factions_targets_hostile_npc", () -> NpcCombatGameTests::attackOtherFactionsTargetsHostileNpc);
+        FUNCTIONS.register("npc_without_attack_other_factions_ignores_npcs", () -> NpcCombatGameTests::npcWithoutAttackOtherFactionsIgnoresNpcs);
+        FUNCTIONS.register("direct_los_none_ignores_walls", () -> NpcCombatGameTests::directLosNoneIgnoresWalls);
+        FUNCTIONS.register("target_out_of_range_is_cleared", () -> NpcCombatGameTests::targetOutOfRangeIsCleared);
+        FUNCTIONS.register("target_death_clears_attacking", () -> NpcCombatGameTests::targetDeathClearsAttacking);
+        FUNCTIONS.register("gets_attacked_faction_draws_monsters", () -> NpcCombatGameTests::getsAttackedFactionDrawsMonsters);
     }
 
     private NpcCombatGameTests() {}
 
     static EntityCustomNpc npc(GameTestHelper h) {
         return h.spawn(NpcEntities.CUSTOM_NPC.get(), CENTER);
+    }
+
+    static EntityCustomNpc npc(GameTestHelper h, double dx, double dz) {
+        return h.spawn(NpcEntities.CUSTOM_NPC.get(), offset(dx, dz));
+    }
+
+    static EntityCustomNpc aggressive(GameTestHelper h, double dx, double dz) {
+        var npc = npc(h, dx, dz);
+        npc.advanced.setFactionId(2);
+        return npc;
     }
 
     static Vec3 offset(double dx, double dz) {
@@ -111,5 +131,131 @@ public final class NpcCombatGameTests {
         h.assertFalse(npc.isInRange(x + 10.5, y, z, 10), "beyond x");
         h.assertFalse(npc.isInRange(x, y - 10.5, z, 10), "below, even under y=0");
         h.succeed();
+    }
+
+    private static void defaultNpcIgnoresSurvivalPlayer(GameTestHelper h) {
+        var npc = npc(h);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(5, 0));
+        h.runAfterDelay(40, () -> {
+            h.assertTrue(npc.getTarget() == null, "no target");
+            h.assertFalse(npc.isAttacking(), "not attacking");
+            player.discard();
+            h.succeed();
+        });
+    }
+
+    private static void aggressiveNpcTargetsSurvivalPlayer(GameTestHelper h) {
+        var npc = aggressive(h, 0, 0);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(6, 0));
+        h.runAfterDelay(1, () -> h.succeedWhen(() -> {
+            h.assertTrue(npc.getTarget() == player, "targets the player");
+            h.assertTrue(npc.isAttacking(), "attacking");
+            player.discard();
+        }));
+    }
+
+    private static void creativeAndSpectatorNeverTargeted(GameTestHelper h) {
+        var npc = aggressive(h, 0, 0);
+        var creative = TestPlayer.spawn(h, GameType.CREATIVE, offset(5, 0));
+        var spectator = TestPlayer.spawn(h, GameType.SPECTATOR, offset(-5, 0));
+        h.runAfterDelay(60, () -> {
+            h.assertTrue(npc.getTarget() == null, "no target");
+            creative.discard();
+            spectator.discard();
+            h.succeed();
+        });
+    }
+
+    private static void targetSwitchingToCreativeIsDropped(GameTestHelper h) {
+        var npc = aggressive(h, 0, 0);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(6, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "targets the player"))
+                .thenExecute(() -> player.mode = GameType.CREATIVE)
+                .thenIdle(3)
+                .thenExecute(() -> h.assertTrue(npc.getTarget() == null, "dropped"))
+                .thenIdle(40)
+                .thenExecute(() -> h.assertTrue(npc.getTarget() == null, "not picked again"))
+                .thenExecute(player::discard)
+                .thenSucceed();
+    }
+
+    /** 1.12.2 Faction.isAggressiveToNpc: the attacker's faction hates the target's (2 hates 0). */
+    private static void attackOtherFactionsTargetsHostileNpc(GameTestHelper h) {
+        var hunter = aggressive(h, -4, 0);
+        hunter.advanced.setAttackOtherFactions(true);
+        var prey = npc(h, 4, 0);
+        h.runAfterDelay(1, () -> h.succeedWhen(() -> h.assertTrue(hunter.getTarget() == prey, "targets the friendly NPC")));
+    }
+
+    private static void npcWithoutAttackOtherFactionsIgnoresNpcs(GameTestHelper h) {
+        var hunter = aggressive(h, -4, 0);
+        var prey = npc(h, 4, 0);
+        h.runAfterDelay(60, () -> {
+            h.assertTrue(hunter.getTarget() == null, "AttackOtherFactions off: NPCs are ignored");
+            h.assertTrue(prey.getTarget() == null, "faction 0 does not hate faction 2");
+            h.succeed();
+        });
+    }
+
+    /** The player sits in a closed stone box; only DirectLOS NONE (6) targets through it. */
+    private static void directLosNoneIgnoresWalls(GameTestHelper h) {
+        for (int x = -1; x <= 1; x++) {
+            for (int z = -1; z <= 1; z++) {
+                for (int y = 0; y <= 3; y++) {
+                    boolean inside = x == 0 && z == 0 && (y == 1 || y == 2);
+                    if (!inside) {
+                        h.setBlock(CENTER.offset(x, y, z), net.minecraft.world.level.block.Blocks.STONE);
+                    }
+                }
+            }
+        }
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, new Vec3(CENTER.getX() + 0.5, CENTER.getY() + 1, CENTER.getZ() + 0.5));
+        var blind = aggressive(h, -6, 0);
+        blind.ai.setSeeTarget(6);
+        var normal = aggressive(h, 6, 0);
+        normal.ai.setSeeTarget(0);
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(blind.getTarget() == player, "DirectLOS NONE targets through the wall"))
+                .thenIdle(40)
+                .thenExecute(() -> h.assertTrue(normal.getTarget() == null, "DirectLOS NORMAL needs a line of sight"))
+                .thenExecute(player::discard)
+                .thenSucceed();
+    }
+
+    private static void targetOutOfRangeIsCleared(GameTestHelper h) {
+        var npc = aggressive(h, 0, 0);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(6, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "targets the player"))
+                .thenExecute(() -> player.setPos(player.getX() + 40, player.getY(), player.getZ()))
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == null, "target cleared"))
+                .thenWaitUntil(() -> h.assertFalse(npc.isAttacking(), "combat reset"))
+                .thenExecute(player::discard)
+                .thenSucceed();
+    }
+
+    private static void targetDeathClearsAttacking(GameTestHelper h) {
+        var npc = aggressive(h, 0, 0);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(6, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "targets the player"))
+                .thenExecute(() -> player.kill(h.getLevel()))
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == null, "dead target cleared"))
+                .thenWaitUntil(() -> h.assertFalse(npc.isAttacking(), "combat reset"))
+                .thenExecute(player::discard)
+                .thenSucceed();
+    }
+
+    /** 1.12.2 onLivingUpdate: monsters near an NPC of a GetsAttacked faction attack it. */
+    private static void getsAttackedFactionDrawsMonsters(GameTestHelper h) {
+        var registry = noppes.npcs.faction.FactionRegistry.get(h.getLevel().getServer());
+        var hated = new noppes.npcs.faction.Faction(77, "test.hated", 0, 1000);
+        hated.getsAttacked = true;
+        registry.put(hated);
+        var npc = npc(h, -4, 0);
+        npc.advanced.setFactionId(77);
+        var husk = h.spawn(EntityType.HUSK, CENTER.east(4));
+        h.runAfterDelay(1, () -> h.succeedWhen(() -> h.assertTrue(husk.getTarget() == npc, "the husk attacks the NPC")));
     }
 }

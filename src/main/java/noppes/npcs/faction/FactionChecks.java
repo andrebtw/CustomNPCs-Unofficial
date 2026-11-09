@@ -1,5 +1,6 @@
 package noppes.npcs.faction;
 
+import java.util.Set;
 import net.minecraft.world.entity.player.Player;
 import noppes.npcs.registry.NpcAttachments;
 
@@ -24,5 +25,14 @@ public final class FactionChecks {
 
     public static boolean isNeutralToPlayer(Faction faction, Player player) {
         return faction.isNeutralAt(points(faction, player));
+    }
+
+    /**
+     * 1.12.2 NPCAttackSelector for another NPC: only with {@code AttackOtherFactions}, then
+     * {@code Faction.isAggressiveToNpc}: our faction hates theirs, or that NPC is set to attack ours.
+     */
+    public static boolean isAggressiveToNpc(Faction own, boolean ownAttackOtherFactions, int otherFactionId,
+            Set<Integer> otherAttackFactions) {
+        return ownAttackOtherFactions && own.isAggressiveToNpc(otherFactionId, otherAttackFactions);
     }
 }

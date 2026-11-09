@@ -20,6 +20,8 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.GoalSelector;
 import net.minecraft.world.entity.ai.goal.WrappedGoal;
+import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.player.Player;
@@ -28,6 +30,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import noppes.npcs.ai.CombatHandler;
+import noppes.npcs.ai.selector.NpcAttackSelector;
+import noppes.npcs.ai.target.NpcClearTargetGoal;
+import noppes.npcs.ai.target.NpcClosestTargetGoal;
 import noppes.npcs.client.NpcTextures;
 import noppes.npcs.entity.data.DataAI;
 import noppes.npcs.entity.data.DataAdvanced;
@@ -124,6 +129,13 @@ public class EntityCustomNpc extends PathfinderMob {
         goalSelector.addGoal(0, new FloatGoal(this));
         goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 8f));
         goalSelector.addGoal(9, new RandomLookAroundGoal(this));
+        if (isKilled()) {
+            return;
+        }
+        // Owner goals (1.12.2 EntityAIOwnerHurtByTarget/OwnerHurtTarget) come with roles.
+        targetSelector.addGoal(0, new NpcClearTargetGoal(this));
+        targetSelector.addGoal(1, new HurtByTargetGoal(this));
+        targetSelector.addGoal(2, new NpcClosestTargetGoal(this, 4, new NpcAttackSelector(this)));
     }
 
     private static void clearGoals(GoalSelector selector) {
@@ -277,6 +289,16 @@ public class EntityCustomNpc extends PathfinderMob {
         entityData.set(DATA_ATTACKING, attacking);
     }
 
+    /** 1.12.2 {@code isFollower}: has an owner (scene, follower/companion role, follower job). */
+    public boolean isFollower() {
+        return getOwner() != null;
+    }
+
+    /** Whether the attack goal lets the target goals pick a new target (HitAndRun says no while running). */
+    public boolean canNewAttack() {
+        return true;
+    }
+
     /** Seam for the 1.12.2 killed state (stage 2b-3). */
     public boolean isKilled() {
         return false;
@@ -384,9 +406,26 @@ public class EntityCustomNpc extends PathfinderMob {
             if (deathTime > 0 || isUntargetablePlayer(getTarget())) {
                 super.setTarget(null);
             }
+            if (!ai.isAiDisabled() && !isKilled() && tickCount % 20 == 0) {
+                drawMonsters();
+            }
             combat.update();
         }
         super.aiStep();
+    }
+
+    /** 1.12.2 onLivingUpdate: idle monsters that see an NPC of a GetsAttacked faction go for it. */
+    private void drawMonsters() {
+        Faction faction = getFaction();
+        if (faction == null || !faction.getsAttacked) {
+            return;
+        }
+        double range = getAttributeValue(Attributes.FOLLOW_RANGE);
+        for (Monster monster : level().getEntitiesOfClass(Monster.class, getBoundingBox().inflate(range))) {
+            if (monster.getTarget() == null && monster.hasLineOfSight(this)) {
+                monster.setTarget(this);
+            }
+        }
     }
 
     public int getSyncedFaction() {

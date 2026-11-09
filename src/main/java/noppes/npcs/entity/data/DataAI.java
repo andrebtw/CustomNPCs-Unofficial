@@ -20,6 +20,10 @@ public final class DataAI {
     /** 1.12.2 {@code setMaxHurtResistantTime} cap. */
     public static final int MAX_HURT_RESISTANT_TIME = 1200;
 
+    /** DirectLOS (1.12.2 EnumSeeTarget) ordinals with behaviour on the server. */
+    public static final int SEE_TARGET_BLIND = 5;
+    public static final int SEE_TARGET_NONE = 6;
+
     private final Runnable onChange;
     private boolean canSwim = true;
     private boolean reactsToFire = false;
@@ -110,6 +114,26 @@ public final class DataAI {
     public List<int[]> getMovingPath() { return Collections.unmodifiableList(movingPath); }
     @Nullable
     public BlockPos getStartPos() { return startPos; }
+
+    /**
+     * 1.12.2 {@code getCurrentMovingPath}: the path point the NPC is heading to, for movingPos and
+     * movingPattern (0 loop, 1 back and forth). Unlike 1.12.2 it does not reset movingPos. Null when
+     * the path is empty.
+     */
+    @Nullable
+    public int[] getCurrentMovingPath() {
+        int size = movingPath.size();
+        if (size == 0) { return null; }
+        if (size == 1) { return movingPath.get(0).clone(); }
+        int pos = movingPos;
+        if (movingPattern == 0 && pos >= size) {
+            pos = 0;
+        } else if (movingPattern == 1) {
+            int size2 = size * 2 - 1;
+            if (pos >= size2) { pos = 0; } else if (pos >= size) { pos = size2 - pos; }
+        }
+        return movingPath.get(Math.min(pos, size - 1)).clone();
+    }
 
     public void setCanSwim(boolean value) {
         if (value != canSwim) { canSwim = value; onChange.run(); }

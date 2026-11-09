@@ -80,6 +80,13 @@ public final class FactionRegistry extends SavedData {
         return Collections.unmodifiableCollection(factions.values());
     }
 
+    /** Adds or replaces a faction by its id (faction editing arrives with the controllers stage). */
+    public void put(Faction faction) {
+        factions.put(faction.id, faction);
+        lastId = Math.max(lastId, faction.id);
+        setDirty();
+    }
+
     public int getLastId() {
         return lastId;
     }
