@@ -77,6 +77,11 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("attack_invisible_false_ignores_invisible_player", () -> NpcCombatGameTests::attackInvisibleFalseIgnoresInvisiblePlayer);
         FUNCTIONS.register("attack_invisible_true_targets_invisible_player", () -> NpcCombatGameTests::attackInvisibleTrueTargetsInvisiblePlayer);
         FUNCTIONS.register("target_turning_invisible_is_dropped", () -> NpcCombatGameTests::targetTurningInvisibleIsDropped);
+        FUNCTIONS.register("direct_los_deaf_never_senses", () -> NpcCombatGameTests::directLosDeafNeverSenses);
+        FUNCTIONS.register("direct_los_blind_senses_through_walls", () -> NpcCombatGameTests::directLosBlindSensesThroughWalls);
+        FUNCTIONS.register("direct_los_calm_sees_only_in_view_cone", () -> NpcCombatGameTests::directLosCalmSeesOnlyInViewCone);
+        FUNCTIONS.register("direct_los_wary_senses_close_targets_behind", () -> NpcCombatGameTests::directLosWarySensesCloseTargetsBehind);
+        FUNCTIONS.register("direct_los_rolls_for_invisible_mobs", () -> NpcCombatGameTests::directLosRollsForInvisibleMobs);
         FUNCTIONS.register("exit_aggressive_npc_hunts_and_hits_survival_player", () -> NpcCombatGameTests::exitAggressiveNpcHuntsAndHitsSurvivalPlayer);
         FUNCTIONS.register("exit_default_npc_is_harmless", () -> NpcCombatGameTests::exitDefaultNpcIsHarmless);
     }
@@ -238,8 +243,8 @@ public final class NpcCombatGameTests {
         });
     }
 
-    /** The player sits in a closed stone box; only DirectLOS NONE (6) targets through it. */
-    private static void directLosNoneIgnoresWalls(GameTestHelper h) {
+    /** A survival player in a closed stone box at the centre of the arena. */
+    static TestPlayer boxedPlayer(GameTestHelper h) {
         for (int x = -1; x <= 1; x++) {
             for (int z = -1; z <= 1; z++) {
                 for (int y = 0; y <= 3; y++) {
@@ -250,7 +255,12 @@ public final class NpcCombatGameTests {
                 }
             }
         }
-        var player = TestPlayer.spawn(h, GameType.SURVIVAL, new Vec3(CENTER.getX() + 0.5, CENTER.getY() + 1, CENTER.getZ() + 0.5));
+        return TestPlayer.spawn(h, GameType.SURVIVAL, new Vec3(CENTER.getX() + 0.5, CENTER.getY() + 1, CENTER.getZ() + 0.5));
+    }
+
+    /** The player sits in a closed stone box; only DirectLOS NONE (6) targets through it. */
+    private static void directLosNoneIgnoresWalls(GameTestHelper h) {
+        var player = boxedPlayer(h);
         var blind = aggressive(h, -6, 0);
         blind.ai.setSeeTarget(6);
         var normal = aggressive(h, 6, 0);
@@ -906,5 +916,108 @@ public final class NpcCombatGameTests {
                 .thenExecute(() -> h.assertTrue(player.hits.isEmpty() && player.isAlive(), "never reached"))
                 .thenExecute(player::discard)
                 .thenSucceed();
+    }
+
+    /** Faces the NPC towards +z (1.12.2/vanilla yaw 0), level. */
+    static void faceSouth(EntityCustomNpc npc) {
+        npc.setYRot(0);
+        npc.setYHeadRot(0);
+        npc.setXRot(0);
+    }
+
+    /** DirectLOS DEAF (1): 1.12.2 canEntityBeSeen is always false. */
+    private static void directLosDeafNeverSenses(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        npc.ai.setSeeTarget(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        h.assertFalse(npc.hasLineOfSight(player), "DEAF sees nobody");
+        h.startSequence()
+                .thenIdle(60)
+                .thenExecute(() -> {
+                    h.assertTrue(npc.getTarget() == null, "DEAF never targets on its own");
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    /** DirectLOS BLIND (5): only "sound", so walls do not matter within aggro range. */
+    private static void directLosBlindSensesThroughWalls(GameTestHelper h) {
+        var player = boxedPlayer(h);
+        var blind = aggressive(h, -6, 0);
+        blind.ai.setSeeTarget(5);
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(blind.getTarget() == player, "BLIND targets through the wall"))
+                .thenExecute(player::discard)
+                .thenSucceed();
+    }
+
+    /** DirectLOS CALM (3): needs a free line and the target within 60 degrees of the head's direction. */
+    private static void directLosCalmSeesOnlyInViewCone(GameTestHelper h) {
+        var npc = npc(h, 0, 0);
+        npc.ai.setSeeTarget(3);
+        var front = TestPlayer.spawn(h, GameType.SURVIVAL, offset(0, 5));
+        var side = TestPlayer.spawn(h, GameType.SURVIVAL, offset(5, 0));
+        var behind = TestPlayer.spawn(h, GameType.SURVIVAL, offset(0, -2));
+        faceSouth(npc);
+        h.assertTrue(npc.hasLineOfSight(front), "in front: seen");
+        h.assertFalse(npc.hasLineOfSight(side), "90 degrees to the side: not seen");
+        h.assertFalse(npc.hasLineOfSight(behind), "behind, even close: not seen");
+        var normal = npc(h, 0, 0);
+        faceSouth(normal);
+        h.assertTrue(normal.hasLineOfSight(behind), "NORMAL has no view cone");
+        front.discard();
+        side.discard();
+        behind.discard();
+        h.succeed();
+    }
+
+    /** WARY (2) and REALISTIC (4): a close target behind is always sensed, a far sneaking one never. */
+    private static void directLosWarySensesCloseTargetsBehind(GameTestHelper h) {
+        var close = TestPlayer.spawn(h, GameType.SURVIVAL, offset(0, -2));
+        var far = TestPlayer.spawn(h, GameType.SURVIVAL, offset(0, -8));
+        far.setShiftKeyDown(true);
+        for (int mode : new int[] {2, 4}) {
+            var npc = npc(h, 0, 0);
+            npc.ai.setSeeTarget(mode);
+            faceSouth(npc);
+            for (int i = 0; i < 50; i++) {
+                h.assertTrue(npc.hasLineOfSight(close), "mode " + mode + ": close behind is sensed");
+                h.assertFalse(npc.hasLineOfSight(far), "mode " + mode + ": far sneaking behind is not");
+            }
+        }
+        close.discard();
+        far.discard();
+        h.succeed();
+    }
+
+    /**
+     * Every mode but NORMAL (and NONE) rolls a small chance to notice an invisible mob. 1.12.2 tested
+     * {@code target instanceof EntityLiving}, which players are not, so invisible players are seen.
+     */
+    private static void directLosRollsForInvisibleMobs(GameTestHelper h) {
+        var husk = h.spawn(EntityType.HUSK, CENTER.south(4));
+        husk.setNoAi(true);
+        makeInvisible(husk);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(1, 4));
+        makeInvisible(player);
+        var calm = npc(h, 0, 0);
+        calm.ai.setSeeTarget(3);
+        faceSouth(calm);
+        var normal = npc(h, 0, 0);
+        faceSouth(normal);
+        int calmSeen = 0;
+        int normalSeen = 0;
+        int playerSeen = 0;
+        for (int i = 0; i < 200; i++) {
+            calmSeen += calm.hasLineOfSight(husk) ? 1 : 0;
+            normalSeen += normal.hasLineOfSight(husk) ? 1 : 0;
+            playerSeen += calm.hasLineOfSight(player) ? 1 : 0;
+        }
+        // amplifier 0 at ~4 of 16 blocks: about 4% per check
+        h.assertTrue(calmSeen < 60, "CALM rarely notices the invisible husk: " + calmSeen);
+        h.assertValueEqual(200, normalSeen, "NORMAL always sees it");
+        h.assertValueEqual(200, playerSeen, "invisible players are not rolled for (1.12.2)");
+        player.discard();
+        h.succeed();
     }
 }

@@ -20,7 +20,12 @@ public final class DataAI {
     /** 1.12.2 {@code setMaxHurtResistantTime} cap. */
     public static final int MAX_HURT_RESISTANT_TIME = 1200;
 
-    /** DirectLOS (1.12.2 EnumSeeTarget) ordinals with behaviour on the server. */
+    /** DirectLOS (1.12.2 EnumSeeTarget) ordinals; their behaviour is in {@code EntityCustomNpc.hasLineOfSight}. */
+    public static final int SEE_TARGET_NORMAL = 0;
+    public static final int SEE_TARGET_DEAF = 1;
+    public static final int SEE_TARGET_WARY = 2;
+    public static final int SEE_TARGET_CALM = 3;
+    public static final int SEE_TARGET_REALISTIC = 4;
     public static final int SEE_TARGET_BLIND = 5;
     public static final int SEE_TARGET_NONE = 6;
 

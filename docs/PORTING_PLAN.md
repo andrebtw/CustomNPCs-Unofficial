@@ -111,18 +111,26 @@ questions. A default NPC stays harmless. These keys are data only; behaviour com
 (aggressors, threat, priority target, hurt-resistance rule, 40-tick combat reset) and the synced
 `Attacking` flag; target goals in the 1.12.2 order (clear target, vanilla hurt-by, closest target
 through `NpcAttackSelector`: faction hostility, `AttackOtherFactions`, creative/spectator ignored,
-`DirectLOS` NONE, near-home rule); monsters go for `GetsAttacked` factions; damage intake (owner,
+`DirectLOS`, near-home rule); monsters go for `GetsAttacked` factions; damage intake (owner,
 same-faction, friendly-player and suffocation damage refused; faction defence with `ThroughWalls`;
 retaliation); melee per `DataMelee` (strength, delay, range, knockback, fire/potion effect); every
 `EnumNpcTactics` tactic plus the `OnAttack` responses (panic, retreat, nothing), sprint and pounce;
 `CalmdownRange` in HitAndRun. Combat GameTests run in a 33x33 arena with an in-level mock player.
 Seams left: `getOwner()`/`isFollower()` (roles), `isKilled()` (2b-3), `AbstractTacticGoal.isRanged()`
-(2b-4). `AttackInvisible` (1.12.2 only saved it; user ruling): false, the default, means invisible entities
-are never targeted (selector, hurt-by, retaliation, defence) and a target that turns invisible is
-dropped. Not ported (later stages): scripted NPC events, attack lines, animations. `DirectLOS`: only NONE (no line of sight
-needed) has its 1.12.2 server behaviour; DEAF, WARY, CALM, REALISTIC and BLIND use the vanilla line
-of sight for now, although 1.12.2 `canEntityBeSeen` gives them server behaviour (DEAF never sees,
-BLIND senses through walls, the others add a view cone and chances). No stage owns them yet.
+(2b-4).
+Follow-ups (user rulings after the 2b-2 review): a 0-damage hit does not provoke (no revenge target, no
+aggressor); an AIDisabled NPC takes no target on any path. `AttackInvisible` (1.12.2 only saved it):
+false, the default, means invisible entities are never targeted (selector, hurt-by, retaliation,
+defence) and a target that turns invisible is dropped. `DirectLOS` is the 1.12.2 `canEntityBeSeen`,
+ported as `EntityCustomNpc.hasLineOfSight` (so vanilla sensing, target goals and the tactics use it):
+within aggro range (eye to eye), NORMAL needs a free line; DEAF never senses; BLIND and NONE need no
+line; WARY/CALM/REALISTIC need a free line inside a 60 degree view cone, WARY/REALISTIC also sense
+targets outside it by chance (always when close, never when far and sneaking); every mode but NORMAL
+and NONE rolls a small chance for an invisible mob (players are never rolled for: 1.12.2 tested
+`EntityLiving`). Not ported: 1.12.2's extra "opaque cube" block test (vanilla collider clip instead)
+and the sleeping animation part of "sleeping" (animations stage; only dead counts). The client-side
+DirectLOS debug render is stage 4.
+Not ported (later stages): scripted NPC events, attack lines, animations.
 Still owed by 2b:
 - **2b-3 damage, death, respawn:** resistances, `PotionImmune`, `IgnoreCobweb`, `ChanceBlockDamage`,
   regen, `BurnInSun`, the killed state, drops per `DataInventory`/`LootMode` (corpse loot via the

@@ -15,6 +15,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -26,6 +27,7 @@ import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.core.Holder;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import noppes.npcs.ai.attack.AbstractTacticGoal;
 import noppes.npcs.ai.attack.AvoidTargetGoal;
 import noppes.npcs.ai.attack.CommanderGoal;
@@ -49,6 +51,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import noppes.npcs.ai.CombatHandler;
+import noppes.npcs.ai.NpcMath;
+import noppes.npcs.ai.NpcSight;
 import noppes.npcs.ai.selector.NpcAttackSelector;
 import noppes.npcs.ai.target.NpcClearTargetGoal;
 import noppes.npcs.ai.target.NpcClosestTargetGoal;
@@ -400,15 +404,68 @@ public class EntityCustomNpc extends PathfinderMob {
         return (float) (Math.atan2(d, a) * 180.0d / Math.PI);
     }
 
-    /**
-     * 1.12.2 {@code canSee} through the NPC's {@code canEntityBeSeen}: never beyond aggro range;
-     * DirectLOS NONE needs no line of sight, every other mode uses the vanilla line of sight.
-     */
+    /** 1.12.2 {@code canSee}: the sensing cache (one answer per entity per tick) over {@link #hasLineOfSight}. */
     public boolean canSee(Entity entity) {
-        if (distanceTo(entity) > stats.getAggroRange()) {
+        return getSensing().hasLineOfSight(entity);
+    }
+
+    /**
+     * 1.12.2 {@code canEntityBeSeen} per DirectLOS. Every mode but DEAF is limited to the aggro range
+     * (eye to eye, a quarter of it while "sleeping"). NORMAL: a free line (vanilla collider clip).
+     * DEAF: never. BLIND: no line needed. NONE: no line needed, and no invisibility roll. WARY, CALM,
+     * REALISTIC: a free line and the target within the 60 degree view cone; WARY and REALISTIC may also
+     * sense a target outside the cone ({@link NpcSight#senseChance}); none of the three see while
+     * sleeping. Every mode but NORMAL and NONE rolls {@link NpcSight#invisibleChance} for an invisible
+     * mob (1.12.2 tested {@code EntityLiving}, so players are not rolled for).
+     */
+    @Override
+    public boolean hasLineOfSight(Entity target) {
+        int mode = ai.getSeeTarget();
+        if (mode == DataAI.SEE_TARGET_DEAF || target.level() != level()) {
             return false;
         }
-        return ai.getSeeTarget() == DataAI.SEE_TARGET_NONE || getSensing().hasLineOfSight(entity);
+        boolean sleeping = isSightSleeping();
+        double aggroRange = Math.clamp(stats.getAggroRange() / (sleeping ? 4.0d : 1.0d), 1.0d, 512.0d);
+        Vec3 eye = getEyePosition();
+        Vec3 targetEye = target.getEyePosition();
+        double distance = eye.distanceTo(targetEye);
+        if (distance > aggroRange) {
+            return false;
+        }
+        if (mode == DataAI.SEE_TARGET_NONE) {
+            return true;
+        }
+        boolean wary = mode == DataAI.SEE_TARGET_WARY || mode == DataAI.SEE_TARGET_REALISTIC;
+        boolean direct = wary || mode == DataAI.SEE_TARGET_CALM;
+        if (direct && sleeping) {
+            return false;
+        }
+        if (mode != DataAI.SEE_TARGET_BLIND && !super.hasLineOfSight(target)) {
+            return false;
+        }
+        if (direct) {
+            double[] angles = NpcMath.yawPitch(eye, targetEye);
+            if (!NpcSight.inViewCone(getYHeadRot(), getXRot(), angles[0], angles[1])
+                    && (!wary || NpcSight.senseChance(distance, aggroRange, target.isShiftKeyDown()) < random.nextDouble())) {
+                return false;
+            }
+        }
+        if (target instanceof Mob mob && mode != DataAI.SEE_TARGET_NORMAL) {
+            MobEffectInstance effect = mob.getEffect(MobEffects.INVISIBILITY);
+            if (effect != null) {
+                return NpcSight.invisibleChance(effect.getAmplifier(), distance, aggroRange, target.isShiftKeyDown())
+                        > random.nextDouble();
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 1.12.2 {@code isPlayerSleeping}: dead, or in the sleeping animation while idle. Animations come
+     * later, so only the dead part applies for now.
+     */
+    private boolean isSightSleeping() {
+        return getHealth() <= 0.0f;
     }
 
     /**
