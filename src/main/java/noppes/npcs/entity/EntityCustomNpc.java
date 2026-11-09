@@ -27,7 +27,11 @@ import net.minecraft.core.Holder;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import noppes.npcs.ai.attack.AbstractTacticGoal;
+import noppes.npcs.ai.attack.AvoidTargetGoal;
 import noppes.npcs.ai.attack.CommanderGoal;
+import noppes.npcs.ai.attack.PounceTargetGoal;
+import noppes.npcs.ai.movement.NpcPanicGoal;
+import noppes.npcs.ai.movement.SprintToTargetGoal;
 import noppes.npcs.ai.attack.DodgeGoal;
 import noppes.npcs.ai.attack.StalkGoal;
 import noppes.npcs.ai.attack.HitAndRunGoal;
@@ -164,12 +168,28 @@ public class EntityCustomNpc extends PathfinderMob {
         addResponseGoals();
     }
 
-    /** 1.12.2 {@code setResponse()}: the attack goal for OnAttack and the tactic. */
+    /**
+     * 1.12.2 {@code setResponse()}: sprinting, then the OnAttack response (0 fight, with pounce and
+     * the tactic; 1 panic; 2 retreat; 3 nothing).
+     */
     private void addResponseGoals() {
         if (ai.isAiDisabled()) {
             // 1.12.2 keeps an Onslaught goal; doHurtTarget refuses every hit.
             tacticGoal = new OnslaughtGoal(this);
+            goalSelector.addGoal(3, tacticGoal);
+            return;
+        }
+        if (ai.isCanSprint()) {
+            goalSelector.addGoal(1, new SprintToTargetGoal(this));
+        }
+        if (ai.getOnAttack() == 1) {
+            goalSelector.addGoal(2, new NpcPanicGoal(this, 1.2d));
+        } else if (ai.getOnAttack() == 2) {
+            tacticGoal = new AvoidTargetGoal(this);
         } else if (ai.getOnAttack() == 0) {
+            if (ai.isCanLeap()) {
+                goalSelector.addGoal(2, new PounceTargetGoal(this));
+            }
             tacticGoal = switch (ai.getTactic()) {
                 case 1 -> new DodgeGoal(this);
                 case 2 -> new SurroundGoal(this);

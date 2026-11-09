@@ -64,6 +64,11 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("stalk_npc_sneaks_when_close", () -> NpcCombatGameTests::stalkNpcSneaksWhenClose);
         FUNCTIONS.register("commander_recruits_neighbour_and_both_attack", () -> NpcCombatGameTests::commanderRecruitsNeighbourAndBothAttack);
         FUNCTIONS.register("commander_without_friends_attacks_alone", () -> NpcCombatGameTests::commanderWithoutFriendsAttacksAlone);
+        FUNCTIONS.register("avoid_npc_keeps_distance", () -> NpcCombatGameTests::avoidNpcKeepsDistance);
+        FUNCTIONS.register("panic_npc_moves_when_targeted", () -> NpcCombatGameTests::panicNpcMovesWhenTargeted);
+        FUNCTIONS.register("sprint_sets_sprinting", () -> NpcCombatGameTests::sprintSetsSprinting);
+        FUNCTIONS.register("pounce_leaps_at_mid_range", () -> NpcCombatGameTests::pounceLeapsAtMidRange);
+        FUNCTIONS.register("on_attack_nothing_has_no_attack_goal", () -> NpcCombatGameTests::onAttackNothingHasNoAttackGoal);
     }
 
     private NpcCombatGameTests() {}
@@ -399,7 +404,7 @@ public final class NpcCombatGameTests {
                 .thenWaitUntil(() -> h.assertFalse(player.hits.isEmpty(), "player was hit"))
                 .thenExecute(() -> {
                     h.assertTrue(player.getHealth() < player.getMaxHealth(), "player lost health");
-                    double reach = npc.stats.melee.getRange() + 1.0;
+                    double reach = npc.stats.melee.getRange() + 1.5; // the hit's knockback (and Dodge's leap) may already apply
                     h.assertTrue(npc.distanceTo(player) <= reach, "hit from melee range: " + npc.distanceTo(player));
                     player.discard();
                 })
@@ -587,16 +592,18 @@ public final class NpcCombatGameTests {
         var neighbour = aggressive(h, -6, 0);
         neighbour.stats.setAggroRange(4);
         neighbour.stats.melee.setStrength(1);
-        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(6, 0));
         boolean[] recruited = {false};
         h.onEachTick(() -> recruited[0] |= neighbour.aiOwnerNpc == commander);
+        TestPlayer[] holder = new TestPlayer[1];
         h.startSequence()
-                .thenWaitUntil(() -> h.assertTrue(commander.getTarget() == player, "commander targets"))
-                .thenWaitUntil(() -> h.assertTrue(neighbour.getTarget() == player, "neighbour joins the attack"))
+                .thenIdle(20) // both NPCs land first: no path can be made mid-air
+                .thenExecute(() -> holder[0] = TestPlayer.spawn(h, GameType.SURVIVAL, offset(6, 0)))
+                .thenWaitUntil(() -> h.assertTrue(commander.getTarget() == holder[0], "commander targets"))
+                .thenWaitUntil(() -> h.assertTrue(neighbour.getTarget() == holder[0], "neighbour joins the attack"))
                 .thenExecute(() -> {
                     h.assertTrue(recruited[0], "the neighbour was recruited first");
                     h.assertTrue(neighbour.aiOwnerNpc == null, "released on attack");
-                    player.discard();
+                    holder[0].discard();
                 })
                 .thenSucceed();
     }
@@ -605,5 +612,86 @@ public final class NpcCombatGameTests {
         var npc = aggressive(h, -4, 0);
         npc.ai.setTactic(4);
         huntAndHit(h, npc, TestPlayer.spawn(h, GameType.SURVIVAL, offset(4, 0)));
+    }
+
+    private static void avoidNpcKeepsDistance(GameTestHelper h) {
+        var npc = aggressive(h, 0, 0);
+        npc.ai.setOnAttack(2);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        h.runAfterDelay(80, () -> {
+            h.assertTrue(npc.getTarget() == player, "still has the target");
+            h.assertTrue(npc.distanceTo(player) > 4.5, "backed away: " + npc.distanceTo(player));
+            h.assertTrue(player.hits.isEmpty(), "never hits");
+            player.discard();
+            h.succeed();
+        });
+    }
+
+    /** Panic re-picks a random spot every few ticks, so it is measured as distance travelled. */
+    private static void panicNpcMovesWhenTargeted(GameTestHelper h) {
+        var npc = npc(h);
+        npc.advanced.setFactionId(1);
+        npc.ai.setOnAttack(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        double[] travelled = {0};
+        Vec3[] last = {null};
+        // Registered up front: adding tick callbacks from inside one breaks the GameTest ticker.
+        h.onEachTick(() -> {
+            if (last[0] != null) {
+                travelled[0] += npc.position().subtract(last[0]).horizontalDistance();
+                last[0] = npc.position();
+            }
+        });
+        h.runAfterDelay(20, () -> {
+            npc.setTarget(player); // what a hit does, without the knockback
+            last[0] = npc.position();
+            h.runAfterDelay(60, () -> {
+                h.assertTrue(travelled[0] > 2.0, "ran around: " + travelled[0] + " target " + npc.getTarget());
+                h.assertTrue(player.hits.isEmpty(), "never hits");
+                player.discard();
+                h.succeed();
+            });
+        });
+    }
+
+    private static void sprintSetsSprinting(GameTestHelper h) {
+        var npc = aggressive(h, -6, 0);
+        npc.ai.setCanSprint(true);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(6, 0));
+        h.runAfterDelay(1, () -> h.succeedWhen(() -> {
+            h.assertTrue(npc.isSprinting(), "sprints towards a far target");
+            player.discard();
+        }));
+    }
+
+    /** The NPC cannot walk (speed 0), so it stays in the 4-8 block band until the 1-in-5 roll. */
+    private static void pounceLeapsAtMidRange(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        npc.ai.setCanLeap(true);
+        npc.ai.setMoveSpeed(0);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        h.succeedWhen(() -> {
+            // A 6-block pounce is flat: about 1.28 horizontal, 0.26 up. The NPC itself cannot walk.
+            h.assertTrue(!npc.onGround() && npc.getDeltaMovement().horizontalDistance() > 0.5, "leaps at the target");
+            player.discard();
+        });
+    }
+
+    private static void onAttackNothingHasNoAttackGoal(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        npc.ai.setOnAttack(3);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        Vec3[] start = {null};
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "OnAttack 3 still targets"))
+                .thenExecute(() -> start[0] = npc.position())
+                .thenIdle(60)
+                .thenExecute(() -> {
+                    h.assertTrue(npc.tacticGoal == null, "no attack goal");
+                    h.assertTrue(npc.position().subtract(start[0]).horizontalDistance() < 0.1, "never closes in");
+                    h.assertTrue(player.hits.isEmpty(), "never hits");
+                    player.discard();
+                })
+                .thenSucceed();
     }
 }
