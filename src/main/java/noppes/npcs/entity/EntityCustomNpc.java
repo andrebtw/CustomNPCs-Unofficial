@@ -11,12 +11,15 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityEquipment;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
+import net.minecraft.world.entity.ai.goal.GoalSelector;
+import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.player.Player;
@@ -24,6 +27,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
+import noppes.npcs.ai.CombatHandler;
 import noppes.npcs.client.NpcTextures;
 import noppes.npcs.entity.data.DataAI;
 import noppes.npcs.entity.data.DataAdvanced;
@@ -50,6 +54,9 @@ public class EntityCustomNpc extends PathfinderMob {
             SynchedEntityData.defineId(EntityCustomNpc.class, EntityDataSerializers.STRING);
     public static final EntityDataAccessor<Integer> DATA_FACTION =
             SynchedEntityData.defineId(EntityCustomNpc.class, EntityDataSerializers.INT);
+    /** 1.12.2 {@code Attacking}: in combat (set by {@link CombatHandler}). */
+    public static final EntityDataAccessor<Boolean> DATA_ATTACKING =
+            SynchedEntityData.defineId(EntityCustomNpc.class, EntityDataSerializers.BOOLEAN);
 
     /** Vanilla slots the NPC's gear is shown in; vanilla never drops them (DropChances 0). */
     private static final EquipmentSlot[] GEAR_SLOTS = {EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND,
@@ -60,6 +67,10 @@ public class EntityCustomNpc extends PathfinderMob {
     public final DataAI ai = new DataAI(this::applyAi);
     public final DataInventory inventory = new DataInventory(this::applyInventory);
     public final DataAdvanced advanced = new DataAdvanced(this::applyAdvanced);
+    public final CombatHandler combat = new CombatHandler(this);
+
+    /** Set when AI-relevant data changes; the goals are rebuilt on the next server tick (1.12.2 updateAI). */
+    private boolean goalsDirty = true;
 
     public EntityCustomNpc(EntityType<? extends EntityCustomNpc> type, Level level) {
         super(type, level);
@@ -91,13 +102,41 @@ public class EntityCustomNpc extends PathfinderMob {
         builder.define(DATA_SHOW_NAME, 0);
         builder.define(DATA_TITLE, "");
         builder.define(DATA_FACTION, 0);
+        builder.define(DATA_ATTACKING, false);
     }
 
+    /** Goals are built by {@link #rebuildGoals()} on the first server tick, once the data is loaded. */
     @Override
     protected void registerGoals() {
+    }
+
+    /**
+     * 1.12.2 {@code updateTasks()}: stops and drops every goal, then adds the ones the current data
+     * asks for. Server only.
+     */
+    public void rebuildGoals() {
+        if (ai == null || level().isClientSide()) {
+            return;
+        }
+        goalsDirty = false;
+        clearGoals(goalSelector);
+        clearGoals(targetSelector);
         goalSelector.addGoal(0, new FloatGoal(this));
         goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 8f));
         goalSelector.addGoal(9, new RandomLookAroundGoal(this));
+    }
+
+    private static void clearGoals(GoalSelector selector) {
+        for (WrappedGoal goal : selector.getAvailableGoals()) {
+            if (goal.isRunning()) {
+                goal.stop();
+            }
+        }
+        selector.removeAllGoals(goal -> true);
+    }
+
+    private void markGoalsDirty() {
+        goalsDirty = true;
     }
 
     /** Pushes display fields into synced data, the custom name and the SCALE attribute. */
@@ -125,6 +164,7 @@ public class EntityCustomNpc extends PathfinderMob {
         }
         getAttribute(Attributes.FOLLOW_RANGE).setBaseValue(stats.getAggroRange());
         getAttribute(Attributes.ATTACK_DAMAGE).setBaseValue(stats.melee.getStrength());
+        markGoalsDirty();
     }
 
     /** Movement attributes from DataAI (1.12.2 setWalkingSpeed / stepHeight). */
@@ -134,6 +174,7 @@ public class EntityCustomNpc extends PathfinderMob {
         }
         getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(ai.walkSpeed());
         getAttribute(Attributes.STEP_HEIGHT).setBaseValue(ai.getStepHeight());
+        markGoalsDirty();
     }
 
     /**
@@ -161,6 +202,7 @@ public class EntityCustomNpc extends PathfinderMob {
         // faction.id. A later registry change is picked up on the next applyAdvanced.
         Faction faction = getFaction();
         entityData.set(DATA_FACTION, faction == null ? advanced.getFactionId() : faction.id);
+        markGoalsDirty();
     }
 
     private ItemStack inventoryStack(EquipmentSlot slot) {
@@ -225,6 +267,126 @@ public class EntityCustomNpc extends PathfinderMob {
      */
     @Override
     public void setGuaranteedDrop(EquipmentSlot slot) {
+    }
+
+    public boolean isAttacking() {
+        return entityData.get(DATA_ATTACKING);
+    }
+
+    public void setAttacking(boolean attacking) {
+        entityData.set(DATA_ATTACKING, attacking);
+    }
+
+    /** Seam for the 1.12.2 killed state (stage 2b-3). */
+    public boolean isKilled() {
+        return false;
+    }
+
+    /** The amount of the last hit taken (vanilla {@code lastHurt}), for {@link CombatHandler#canDamage}. */
+    public float getLastHurtAmount() {
+        return lastHurt;
+    }
+
+    /** 1.12.2 {@code capabilities.disableDamage}: creative and spectator players are never targets. */
+    public static boolean isUntargetablePlayer(@Nullable Entity entity) {
+        return entity instanceof Player player
+                && (player.getAbilities().invulnerable || player.isCreative() || player.isSpectator());
+    }
+
+    /**
+     * 1.12.2 {@code isInRange}: a box test (each axis within {@code range}), not a sphere. 1.12.2
+     * skipped the vertical test below y=0; worlds go below 0 now, so it always applies.
+     */
+    public boolean isInRange(double x, double y, double z, double range) {
+        return Math.abs(getY() - y) <= range && Math.abs(getX() - x) <= range && Math.abs(getZ() - z) <= range;
+    }
+
+    public boolean isInRange(Entity entity, double range) {
+        return isInRange(entity.getX(), entity.getY(), entity.getZ(), range);
+    }
+
+    /** 1.12.2 {@code isFriend}: another NPC of the same faction or of a friend faction (either way). */
+    public boolean isFriend(@Nullable Entity entity) {
+        if (!(entity instanceof EntityCustomNpc other)) {
+            return false;
+        }
+        Faction own = getFaction();
+        Faction theirs = other.getFaction();
+        if (own == null || theirs == null) {
+            return false;
+        }
+        return own.id == theirs.id || theirs.friendFactions.contains(own.id)
+                || other.advanced.getFriendFactions().contains(own.id)
+                || own.friendFactions.contains(theirs.id)
+                || advanced.getFriendFactions().contains(theirs.id);
+    }
+
+    /**
+     * 1.12.2 {@code setAttackTarget}: creative/spectator players and the owner are refused, and an
+     * existing target is kept while the combat handler has a priority target. Clearing the target
+     * also stops the running target goals. Scripted target events and attack lines are not ported.
+     */
+    @Override
+    public void setTarget(@Nullable LivingEntity entity) {
+        if (combat == null) { // Entity super-constructor
+            super.setTarget(entity);
+            return;
+        }
+        if (isUntargetablePlayer(entity) || (entity != null && entity == getOwner()) || getTarget() == entity) {
+            return;
+        }
+        if (getTarget() != null && combat.priorityTarget != null) {
+            return;
+        }
+        if (entity == null) {
+            for (WrappedGoal goal : targetSelector.getAvailableGoals()) {
+                if (goal.isRunning()) {
+                    goal.stop();
+                }
+            }
+        }
+        super.setTarget(entity);
+    }
+
+    /** 1.12.2 {@code setPriorityAttackTarget}: the combat handler's choice, past the priority lock. */
+    public void setPriorityTarget(@Nullable LivingEntity entity) {
+        if (!isAlive() || getTarget() == entity || isUntargetablePlayer(entity)
+                || (entity != null && entity == getOwner()) || isFriend(entity)) {
+            return;
+        }
+        super.setTarget(entity);
+    }
+
+    /** 1.12.2 {@code onAttack}: take up a fight on someone else's behalf (faction defence). */
+    public void onAttack(@Nullable LivingEntity entity) {
+        if (!ai.isAiDisabled() && entity != null && entity != this && !isAttacking() && ai.getOnAttack() != 3
+                && entity != getOwner()) {
+            super.setTarget(entity);
+        }
+    }
+
+    /**
+     * 1.12.2 {@code canAttackClass} is false while AIDisabled, so target goals never pick anyone. NPCs
+     * fight in peaceful too (1.12.2 NPCs are not monsters), so the vanilla peaceful check is skipped.
+     */
+    @Override
+    public boolean canAttack(LivingEntity target) {
+        return !ai.isAiDisabled() && target.canBeSeenAsEnemy();
+    }
+
+    @Override
+    public void aiStep() {
+        if (!level().isClientSide()) {
+            if (goalsDirty) {
+                rebuildGoals();
+            }
+            // 1.12.2 onUpdate: a target that turned creative (or a dying NPC) drops it, past the lock.
+            if (deathTime > 0 || isUntargetablePlayer(getTarget())) {
+                super.setTarget(null);
+            }
+            combat.update();
+        }
+        super.aiStep();
     }
 
     public int getSyncedFaction() {

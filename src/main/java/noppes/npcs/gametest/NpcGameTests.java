@@ -96,6 +96,7 @@ public final class NpcGameTests {
 
     public static void register(IEventBus modBus) {
         FUNCTIONS.register(modBus);
+        NpcCombatGameTests.FUNCTIONS.register(modBus);
         modBus.addListener(NpcGameTests::registerInstances);
     }
 
@@ -105,6 +106,12 @@ public final class NpcGameTests {
         TestData<Holder<TestEnvironmentDefinition>> data = new TestData<>(env, STRUCTURE, MAX_TICKS, 0, true);
         for (DeferredHolder<Consumer<GameTestHelper>, ? extends Consumer<GameTestHelper>> fn : FUNCTIONS.getEntries()) {
             event.registerTest(fn.getId(), new FunctionGameTestInstance(fn.getKey(), data));
+        }
+        TestData<Holder<TestEnvironmentDefinition>> arena =
+                new TestData<>(env, NpcCombatGameTests.ARENA, NpcCombatGameTests.MAX_TICKS, 0, true);
+        for (DeferredHolder<Consumer<GameTestHelper>, ? extends Consumer<GameTestHelper>> fn
+                : NpcCombatGameTests.FUNCTIONS.getEntries()) {
+            event.registerTest(fn.getId(), new FunctionGameTestInstance(fn.getKey(), arena));
         }
     }
 
