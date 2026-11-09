@@ -41,6 +41,14 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("target_out_of_range_is_cleared", () -> NpcCombatGameTests::targetOutOfRangeIsCleared);
         FUNCTIONS.register("target_death_clears_attacking", () -> NpcCombatGameTests::targetDeathClearsAttacking);
         FUNCTIONS.register("gets_attacked_faction_draws_monsters", () -> NpcCombatGameTests::getsAttackedFactionDrawsMonsters);
+        FUNCTIONS.register("friendly_player_damage_refused", () -> NpcCombatGameTests::friendlyPlayerDamageRefused);
+        FUNCTIONS.register("hit_makes_neutral_npc_fight_back", () -> NpcCombatGameTests::hitMakesNeutralNpcFightBack);
+        FUNCTIONS.register("zero_damage_provokes_only_through_hurt_by", () -> NpcCombatGameTests::zeroDamageProvokesOnlyThroughHurtBy);
+        FUNCTIONS.register("same_faction_npc_damage_refused", () -> NpcCombatGameTests::sameFactionNpcDamageRefused);
+        FUNCTIONS.register("in_wall_damage_refused", () -> NpcCombatGameTests::inWallDamageRefused);
+        FUNCTIONS.register("defend_faction_recruits_neighbour", () -> NpcCombatGameTests::defendFactionRecruitsNeighbour);
+        FUNCTIONS.register("defend_faction_without_through_walls_needs_sight", () -> NpcCombatGameTests::defendFactionWithoutThroughWallsNeedsSight);
+        FUNCTIONS.register("hit_registers_aggressor", () -> NpcCombatGameTests::hitRegistersAggressor);
     }
 
     private NpcCombatGameTests() {}
@@ -257,5 +265,116 @@ public final class NpcCombatGameTests {
         npc.advanced.setFactionId(77);
         var husk = h.spawn(EntityType.HUSK, CENTER.east(4));
         h.runAfterDelay(1, () -> h.succeedWhen(() -> h.assertTrue(husk.getTarget() == npc, "the husk attacks the NPC")));
+    }
+
+    static boolean hurt(GameTestHelper h, EntityCustomNpc npc, net.minecraft.world.damagesource.DamageSource source, float amount) {
+        return npc.hurtServer(h.getLevel(), source, amount);
+    }
+
+    private static void friendlyPlayerDamageRefused(GameTestHelper h) {
+        var npc = npc(h);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        h.assertFalse(hurt(h, npc, npc.damageSources().playerAttack(player), 4), "refused");
+        h.assertValueEqual(20f, npc.getHealth(), "health");
+        h.runAfterDelay(20, () -> {
+            h.assertTrue(npc.getTarget() == null, "no target");
+            player.discard();
+            h.succeed();
+        });
+    }
+
+    /** Faction 1 is neutral to a new player: no target on its own, but a hit is answered. */
+    private static void hitMakesNeutralNpcFightBack(GameTestHelper h) {
+        var npc = npc(h);
+        npc.advanced.setFactionId(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(8, 0));
+        h.runAfterDelay(20, () -> {
+            h.assertTrue(npc.getTarget() == null, "neutral: no target before the hit");
+            h.assertTrue(hurt(h, npc, npc.damageSources().playerAttack(player), 4), "hurt");
+            h.assertValueEqual(16f, npc.getHealth(), "health");
+            h.assertTrue(npc.getTarget() == player, "fights back at once");
+            player.discard();
+            h.succeed();
+        });
+    }
+
+    /**
+     * 1.12.2 attackEntityFrom only takes up the attacker when damage > 0, but the hit still sets the
+     * revenge target, so the vanilla hurt-by goal answers it a moment later.
+     */
+    private static void zeroDamageProvokesOnlyThroughHurtBy(GameTestHelper h) {
+        var npc = npc(h);
+        npc.advanced.setFactionId(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(5, 0));
+        h.startSequence()
+                .thenIdle(5)
+                .thenExecute(() -> {
+                    hurt(h, npc, npc.damageSources().playerAttack(player), 0);
+                    h.assertTrue(npc.getTarget() == null, "no direct retaliation for 0 damage");
+                })
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "hurt-by goal answers"))
+                .thenExecute(player::discard)
+                .thenSucceed();
+    }
+
+    private static void sameFactionNpcDamageRefused(GameTestHelper h) {
+        var a = aggressive(h, -2, 0);
+        var b = aggressive(h, 2, 0);
+        h.assertFalse(hurt(h, b, b.damageSources().mobAttack(a), 4), "refused");
+        h.assertValueEqual(20f, b.getHealth(), "health");
+        h.assertTrue(b.getTarget() == null, "no target");
+        h.succeed();
+    }
+
+    private static void inWallDamageRefused(GameTestHelper h) {
+        var npc = npc(h);
+        h.assertFalse(hurt(h, npc, npc.damageSources().inWall(), 4), "refused");
+        h.assertValueEqual(20f, npc.getHealth(), "health");
+        h.succeed();
+    }
+
+    private static void defendFactionRecruitsNeighbour(GameTestHelper h) {
+        var victim = npc(h, -3, 0);
+        var neighbour = npc(h, 3, 0);
+        neighbour.advanced.setDefendFaction(true);
+        var husk = h.spawn(EntityType.HUSK, CENTER.north(5));
+        h.runAfterDelay(2, () -> {
+            hurt(h, victim, victim.damageSources().mobAttack(husk), 2);
+            h.assertTrue(neighbour.getTarget() == husk, "neighbour defends its faction");
+            h.succeed();
+        });
+    }
+
+    /** A neighbour behind a wall only defends with ThroughWalls (within aggro range). */
+    private static void defendFactionWithoutThroughWallsNeedsSight(GameTestHelper h) {
+        for (int z = -3; z <= 3; z++) {
+            for (int y = 0; y <= 3; y++) {
+                h.setBlock(CENTER.offset(0, y, z), net.minecraft.world.level.block.Blocks.STONE);
+            }
+        }
+        var victim = npc(h, -3, 0);
+        var blind = npc(h, 3, -1);
+        blind.advanced.setDefendFaction(true);
+        blind.advanced.setThroughWalls(false);
+        var hearing = npc(h, 3, 1);
+        hearing.advanced.setDefendFaction(true);
+        var husk = h.spawn(EntityType.HUSK, CENTER.west(6));
+        h.runAfterDelay(2, () -> {
+            hurt(h, victim, victim.damageSources().mobAttack(husk), 2);
+            h.assertTrue(blind.getTarget() == null, "no sight, no ThroughWalls: ignores it");
+            h.assertTrue(hearing.getTarget() == husk, "ThroughWalls: defends within aggro range");
+            h.succeed();
+        });
+    }
+
+    private static void hitRegistersAggressor(GameTestHelper h) {
+        var npc = npc(h);
+        npc.advanced.setFactionId(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        hurt(h, npc, npc.damageSources().playerAttack(player), 4);
+        h.assertTrue(npc.combat.aggressors.containsKey(player), "aggressor recorded");
+        h.assertTrue(npc.combat.priorityTarget == player, "first attacker is the priority target");
+        player.discard();
+        h.succeed();
     }
 }

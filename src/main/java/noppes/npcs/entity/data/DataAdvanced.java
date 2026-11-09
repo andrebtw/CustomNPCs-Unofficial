@@ -4,8 +4,10 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.TreeSet;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
+import noppes.npcs.entity.EntityCustomNpc;
 import noppes.npcs.faction.Faction;
 
 /**
@@ -89,5 +91,28 @@ public final class DataAdvanced {
         Set<Integer> friend = new TreeSet<>(friendFactions);
         Faction.loadIntegerSet(in, "FrendFactions", friend);
         setFriendFactions(friend);
+    }
+
+    /**
+     * 1.12.2 {@code tryDefendFaction}: {@code self} (an NPC near {@code attacked}) takes up the fight
+     * against {@code attacker} when it defends its faction, belongs to (or is friends with)
+     * {@code attackedFactionId}, and sees the attacked NPC, or with ThroughWalls is within aggro range.
+     */
+    public void tryDefendFaction(EntityCustomNpc self, int attackedFactionId, LivingEntity attacked, LivingEntity attacker) {
+        if (self.isKilled() || !defendFaction || attacked.equals(attacker)) {
+            return;
+        }
+        boolean canSee = self.getSensing().hasLineOfSight(attacked);
+        if (!canSee && throughWalls) {
+            canSee = self.distanceTo(attacked) <= self.stats.getAggroRange();
+        }
+        Faction own = self.getFaction();
+        if (own == null || !canSee) {
+            return;
+        }
+        if (own.id == attackedFactionId || own.friendFactions.contains(attackedFactionId)
+                || friendFactions.contains(attackedFactionId)) {
+            self.onAttack(attacker);
+        }
     }
 }

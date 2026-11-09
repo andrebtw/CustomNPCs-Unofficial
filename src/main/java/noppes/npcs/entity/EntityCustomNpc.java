@@ -9,6 +9,7 @@ import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.EntityEquipment;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Entity;
@@ -40,6 +41,7 @@ import noppes.npcs.entity.data.DataDisplay;
 import noppes.npcs.entity.data.DataInventory;
 import noppes.npcs.entity.data.DataStats;
 import noppes.npcs.faction.Faction;
+import noppes.npcs.faction.FactionChecks;
 import noppes.npcs.faction.FactionRegistry;
 import noppes.npcs.util.NpcNames;
 
@@ -412,6 +414,69 @@ public class EntityCustomNpc extends PathfinderMob {
             combat.update();
         }
         super.aiStep();
+    }
+
+    /**
+     * 1.12.2 {@code attackEntityFrom}, for the parts that exist in 2b-2: the NPC refuses damage from
+     * its owner, its own faction and friendly players, and from suffocation; otherwise nearby NPCs
+     * may defend it and it takes up the fight. Resistances, blocking, the killed state and void reset
+     * (2b-3), scripted events and animations are not ported.
+     */
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        if (tacticRefusesDamage()) {
+            return false;
+        }
+        if (source.is(DamageTypes.IN_WALL) || !combat.canDamage(source, amount)) {
+            return false;
+        }
+        LivingEntity attacker = source.getEntity() instanceof LivingEntity living ? living : null;
+        Faction faction = getFaction();
+        if (attacker != null && attacker == getOwner()) {
+            return false;
+        }
+        if (attacker instanceof EntityCustomNpc other) {
+            Faction theirs = other.getFaction();
+            if (faction != null && theirs != null && faction.id == theirs.id) {
+                return false;
+            }
+        } else if (attacker instanceof Player player && faction != null && FactionChecks.isFriendlyToPlayer(faction, player)) {
+            return false;
+        }
+        if (isKilled()) {
+            return false;
+        }
+        if (attacker == null || (attacker instanceof Player player && player.isCreative())) {
+            return super.hurtServer(level, source, amount);
+        }
+        if (amount > 0.0f && faction != null) {
+            for (EntityCustomNpc npc : level.getEntitiesOfClass(EntityCustomNpc.class, getBoundingBox().inflate(32.0, 16.0, 32.0))) {
+                if (npc != this) {
+                    npc.advanced.tryDefendFaction(npc, faction.id, this, attacker);
+                }
+            }
+        }
+        if (isAttacking()) {
+            LivingEntity target = getTarget();
+            if (target != null && distanceTo(target) > distanceTo(attacker)) {
+                setTarget(attacker);
+            }
+        } else if (amount > 0.0f) {
+            setTarget(attacker);
+        }
+        return super.hurtServer(level, source, amount);
+    }
+
+    /** The tactic's damage veto (1.12.2 {@code aiAttackTarget.damaged()}, Dodge). */
+    private boolean tacticRefusesDamage() {
+        return false;
+    }
+
+    /** 1.12.2 {@code damageEntity}: every applied hit feeds the combat handler. */
+    @Override
+    protected void actuallyHurt(ServerLevel level, DamageSource source, float amount) {
+        super.actuallyHurt(level, source, amount);
+        combat.damage(source, amount);
     }
 
     /** 1.12.2 onLivingUpdate: idle monsters that see an NPC of a GetsAttacked faction go for it. */
