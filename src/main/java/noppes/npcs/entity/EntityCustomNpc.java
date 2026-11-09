@@ -15,7 +15,6 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -416,7 +415,7 @@ public class EntityCustomNpc extends PathfinderMob {
      * REALISTIC: a free line and the target within the 60 degree view cone; WARY and REALISTIC may also
      * sense a target outside the cone ({@link NpcSight#senseChance}); none of the three see while
      * sleeping. Every mode but NORMAL and NONE rolls {@link NpcSight#invisibleChance} for an invisible
-     * mob (1.12.2 tested {@code EntityLiving}, so players are not rolled for).
+     * living target, players included (user ruling; 1.12.2 tested {@code EntityLiving}, i.e. mobs only).
      */
     @Override
     public boolean hasLineOfSight(Entity target) {
@@ -450,8 +449,8 @@ public class EntityCustomNpc extends PathfinderMob {
                 return false;
             }
         }
-        if (target instanceof Mob mob && mode != DataAI.SEE_TARGET_NORMAL) {
-            MobEffectInstance effect = mob.getEffect(MobEffects.INVISIBILITY);
+        if (target instanceof LivingEntity living && mode != DataAI.SEE_TARGET_NORMAL) {
+            MobEffectInstance effect = living.getEffect(MobEffects.INVISIBILITY);
             if (effect != null) {
                 return NpcSight.invisibleChance(effect.getAmplifier(), distance, aggroRange, target.isShiftKeyDown())
                         > random.nextDouble();

@@ -126,8 +126,8 @@ ported as `EntityCustomNpc.hasLineOfSight` (so vanilla sensing, target goals and
 within aggro range (eye to eye), NORMAL needs a free line; DEAF never senses; BLIND and NONE need no
 line; WARY/CALM/REALISTIC need a free line inside a 60 degree view cone, WARY/REALISTIC also sense
 targets outside it by chance (always when close, never when far and sneaking); every mode but NORMAL
-and NONE rolls a small chance for an invisible mob (players are never rolled for: 1.12.2 tested
-`EntityLiving`). Not ported: 1.12.2's extra "opaque cube" block test (vanilla collider clip instead)
+and NONE rolls a small chance for an invisible mob or player (user ruling; 1.12.2 tested
+`EntityLiving`, which left players out). Not ported: 1.12.2's extra "opaque cube" block test (vanilla collider clip instead)
 and the sleeping animation part of "sleeping" (animations stage; only dead counts). The client-side
 DirectLOS debug render is stage 4.
 Not ported (later stages): scripted NPC events, attack lines, animations.

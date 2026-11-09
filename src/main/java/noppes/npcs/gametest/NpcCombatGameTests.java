@@ -81,7 +81,7 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("direct_los_blind_senses_through_walls", () -> NpcCombatGameTests::directLosBlindSensesThroughWalls);
         FUNCTIONS.register("direct_los_calm_sees_only_in_view_cone", () -> NpcCombatGameTests::directLosCalmSeesOnlyInViewCone);
         FUNCTIONS.register("direct_los_wary_senses_close_targets_behind", () -> NpcCombatGameTests::directLosWarySensesCloseTargetsBehind);
-        FUNCTIONS.register("direct_los_rolls_for_invisible_mobs", () -> NpcCombatGameTests::directLosRollsForInvisibleMobs);
+        FUNCTIONS.register("direct_los_rolls_for_invisible_targets", () -> NpcCombatGameTests::directLosRollsForInvisibleTargets);
         FUNCTIONS.register("zero_damage_hit_does_not_switch_target", () -> NpcCombatGameTests::zeroDamageHitDoesNotSwitchTarget);
         FUNCTIONS.register("provoker_turning_invisible_is_dropped_at_once", () -> NpcCombatGameTests::provokerTurningInvisibleIsDroppedAtOnce);
         FUNCTIONS.register("exit_aggressive_npc_hunts_and_hits_survival_player", () -> NpcCombatGameTests::exitAggressiveNpcHuntsAndHitsSurvivalPlayer);
@@ -993,10 +993,10 @@ public final class NpcCombatGameTests {
     }
 
     /**
-     * Every mode but NORMAL (and NONE) rolls a small chance to notice an invisible mob. 1.12.2 tested
-     * {@code target instanceof EntityLiving}, which players are not, so invisible players are seen.
+     * Every mode but NORMAL (and NONE) rolls a small chance to notice an invisible mob or player. User
+     * ruling: players too (1.12.2 tested {@code EntityLiving}, which left players out).
      */
-    private static void directLosRollsForInvisibleMobs(GameTestHelper h) {
+    private static void directLosRollsForInvisibleTargets(GameTestHelper h) {
         var husk = h.spawn(EntityType.HUSK, CENTER.south(4));
         husk.setNoAi(true);
         makeInvisible(husk);
@@ -1018,7 +1018,7 @@ public final class NpcCombatGameTests {
         // amplifier 0 at ~4 of 16 blocks: about 4% per check
         h.assertTrue(calmSeen < 60, "CALM rarely notices the invisible husk: " + calmSeen);
         h.assertValueEqual(200, normalSeen, "NORMAL always sees it");
-        h.assertValueEqual(200, playerSeen, "invisible players are not rolled for (1.12.2)");
+        h.assertTrue(playerSeen < 60, "CALM rarely notices the invisible player: " + playerSeen);
         player.discard();
         h.succeed();
     }
