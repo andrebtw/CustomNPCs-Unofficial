@@ -43,7 +43,7 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("gets_attacked_faction_draws_monsters", () -> NpcCombatGameTests::getsAttackedFactionDrawsMonsters);
         FUNCTIONS.register("friendly_player_damage_refused", () -> NpcCombatGameTests::friendlyPlayerDamageRefused);
         FUNCTIONS.register("hit_makes_neutral_npc_fight_back", () -> NpcCombatGameTests::hitMakesNeutralNpcFightBack);
-        FUNCTIONS.register("zero_damage_provokes_only_through_hurt_by", () -> NpcCombatGameTests::zeroDamageProvokesOnlyThroughHurtBy);
+        FUNCTIONS.register("zero_damage_hit_does_not_provoke", () -> NpcCombatGameTests::zeroDamageHitDoesNotProvoke);
         FUNCTIONS.register("same_faction_npc_damage_refused", () -> NpcCombatGameTests::sameFactionNpcDamageRefused);
         FUNCTIONS.register("in_wall_damage_refused", () -> NpcCombatGameTests::inWallDamageRefused);
         FUNCTIONS.register("defend_faction_recruits_neighbour", () -> NpcCombatGameTests::defendFactionRecruitsNeighbour);
@@ -325,21 +325,36 @@ public final class NpcCombatGameTests {
     }
 
     /**
-     * 1.12.2 attackEntityFrom only takes up the attacker when damage > 0, but the hit still sets the
-     * revenge target, so the vanilla hurt-by goal answers it a moment later.
+     * User ruling (2b-2 follow-up): a 0-damage hit (snowball, /damage 0) leaves the NPC unprovoked: no
+     * target (not even through the hurt-by goal), no combat, no aggressor, no faction defence.
      */
-    private static void zeroDamageProvokesOnlyThroughHurtBy(GameTestHelper h) {
-        var npc = npc(h);
-        npc.advanced.setFactionId(1);
-        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(5, 0));
+    private static void zeroDamageHitDoesNotProvoke(GameTestHelper h) {
+        var punched = npc(h, -4, 0);
+        punched.advanced.setFactionId(1);
+        var pelted = npc(h, 4, 0);
+        pelted.advanced.setFactionId(1);
+        var defender = npc(h, 0, 4);
+        defender.advanced.setFactionId(1);
+        defender.advanced.setDefendFaction(true);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(0, -8));
+        var snowball = h.spawn(EntityType.SNOWBALL, CENTER.north(6));
+        snowball.setNoGravity(true);
         h.startSequence()
                 .thenIdle(5)
                 .thenExecute(() -> {
-                    hurt(h, npc, npc.damageSources().playerAttack(player), 0);
-                    h.assertTrue(npc.getTarget() == null, "no direct retaliation for 0 damage");
+                    hurt(h, punched, punched.damageSources().playerAttack(player), 0);
+                    hurt(h, pelted, pelted.damageSources().thrown(snowball, player), 0);
                 })
-                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "hurt-by goal answers"))
-                .thenExecute(player::discard)
+                .thenIdle(60)
+                .thenExecute(() -> {
+                    for (EntityCustomNpc npc : new EntityCustomNpc[] {punched, pelted, defender}) {
+                        h.assertTrue(npc.getTarget() == null, "no target");
+                        h.assertFalse(npc.isAttacking(), "no combat");
+                        h.assertTrue(npc.combat.aggressors.isEmpty(), "no aggressor");
+                    }
+                    player.discard();
+                    snowball.discard();
+                })
                 .thenSucceed();
     }
 

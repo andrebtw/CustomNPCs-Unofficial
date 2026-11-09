@@ -103,6 +103,8 @@ public class EntityCustomNpc extends PathfinderMob {
 
     /** Set when AI-relevant data changes; the goals are rebuilt on the next server tick (1.12.2 updateAI). */
     private boolean goalsDirty = true;
+    /** True while {@link #hurtServer} handles a hit of 0 damage or less. */
+    private boolean zeroDamageHit = false;
 
     public EntityCustomNpc(EntityType<? extends EntityCustomNpc> type, Level level) {
         super(type, level);
@@ -611,7 +613,23 @@ public class EntityCustomNpc extends PathfinderMob {
         } else if (amount > 0.0f) {
             setTarget(attacker);
         }
-        return super.hurtServer(level, source, amount);
+        zeroDamageHit = amount <= 0.0f;
+        try {
+            return super.hurtServer(level, source, amount);
+        } finally {
+            zeroDamageHit = false;
+        }
+    }
+
+    /**
+     * Vanilla records every attacker as the revenge target, which the hurt-by goal answers. User
+     * ruling: a 0-damage hit (snowball, /damage 0) does not provoke the NPC.
+     */
+    @Override
+    protected void resolveMobResponsibleForDamage(DamageSource source) {
+        if (!zeroDamageHit) {
+            super.resolveMobResponsibleForDamage(source);
+        }
     }
 
     /** The tactic's damage veto (1.12.2 {@code aiAttackTarget.damaged()}, Dodge). */
@@ -623,7 +641,9 @@ public class EntityCustomNpc extends PathfinderMob {
     @Override
     protected void actuallyHurt(ServerLevel level, DamageSource source, float amount) {
         super.actuallyHurt(level, source, amount);
-        combat.damage(source, amount);
+        if (!zeroDamageHit) { // a 0-damage hit records no aggressor (user ruling)
+            combat.damage(source, amount);
+        }
     }
 
     /** 1.12.2 onLivingUpdate: idle monsters that see an NPC of a GetsAttacked faction go for it. */
