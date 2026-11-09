@@ -27,7 +27,9 @@ import net.minecraft.core.Holder;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import noppes.npcs.ai.attack.AbstractTacticGoal;
+import noppes.npcs.ai.attack.CommanderGoal;
 import noppes.npcs.ai.attack.DodgeGoal;
+import noppes.npcs.ai.attack.StalkGoal;
 import noppes.npcs.ai.attack.HitAndRunGoal;
 import noppes.npcs.ai.attack.NoTacticGoal;
 import noppes.npcs.ai.attack.SurroundGoal;
@@ -172,6 +174,8 @@ public class EntityCustomNpc extends PathfinderMob {
                 case 1 -> new DodgeGoal(this);
                 case 2 -> new SurroundGoal(this);
                 case 3 -> new HitAndRunGoal(this);
+                case 4 -> new CommanderGoal(this);
+                case 5 -> new StalkGoal(this);
                 case 6 -> new NoTacticGoal(this);
                 default -> new OnslaughtGoal(this);
             };

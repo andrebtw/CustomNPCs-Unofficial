@@ -61,6 +61,9 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("orbit_npc_keeps_close_and_hits", () -> NpcCombatGameTests::orbitNpcKeepsCloseAndHits);
         FUNCTIONS.register("hit_and_run_restores_target", () -> NpcCombatGameTests::hitAndRunRestoresTarget);
         FUNCTIONS.register("hit_and_run_stop_clears_run", () -> NpcCombatGameTests::hitAndRunStopClearsRun);
+        FUNCTIONS.register("stalk_npc_sneaks_when_close", () -> NpcCombatGameTests::stalkNpcSneaksWhenClose);
+        FUNCTIONS.register("commander_recruits_neighbour_and_both_attack", () -> NpcCombatGameTests::commanderRecruitsNeighbourAndBothAttack);
+        FUNCTIONS.register("commander_without_friends_attacks_alone", () -> NpcCombatGameTests::commanderWithoutFriendsAttacksAlone);
     }
 
     private NpcCombatGameTests() {}
@@ -561,5 +564,46 @@ public final class NpcCombatGameTests {
                     player.discard();
                 })
                 .thenSucceed();
+    }
+
+    private static void stalkNpcSneaksWhenClose(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        npc.ai.setTactic(5);
+        npc.ai.setTacticalRadius(8);
+        npc.stats.melee.setStrength(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.isShiftKeyDown(), "sneaks within TacticalRadius"))
+                .thenExecute(player::discard)
+                .thenWaitUntil(() -> h.assertFalse(npc.isShiftKeyDown(), "stands up once the target is gone"))
+                .thenSucceed();
+    }
+
+    /** The neighbour's aggro range is too short to see the player: only the commander can call it in. */
+    private static void commanderRecruitsNeighbourAndBothAttack(GameTestHelper h) {
+        var commander = aggressive(h, -4, 0);
+        commander.ai.setTactic(4);
+        commander.stats.melee.setStrength(1);
+        var neighbour = aggressive(h, -6, 0);
+        neighbour.stats.setAggroRange(4);
+        neighbour.stats.melee.setStrength(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(6, 0));
+        boolean[] recruited = {false};
+        h.onEachTick(() -> recruited[0] |= neighbour.aiOwnerNpc == commander);
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(commander.getTarget() == player, "commander targets"))
+                .thenWaitUntil(() -> h.assertTrue(neighbour.getTarget() == player, "neighbour joins the attack"))
+                .thenExecute(() -> {
+                    h.assertTrue(recruited[0], "the neighbour was recruited first");
+                    h.assertTrue(neighbour.aiOwnerNpc == null, "released on attack");
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    private static void commanderWithoutFriendsAttacksAlone(GameTestHelper h) {
+        var npc = aggressive(h, -4, 0);
+        npc.ai.setTactic(4);
+        huntAndHit(h, npc, TestPlayer.spawn(h, GameType.SURVIVAL, offset(4, 0)));
     }
 }
