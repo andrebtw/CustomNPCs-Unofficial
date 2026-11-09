@@ -106,16 +106,35 @@ and vanilla equipment changes are kept; melee strength, walk speed and step heig
 attributes. Factions: `FactionRegistry` (`SavedData`, 1.12.2 defaults) and per-player
 `PlayerFactionPoints` (attachment, `copyOnDeath`) answering the 1.12.2 friendly/neutral/aggressive
 questions. A default NPC stays harmless. These keys are data only; behaviour comes next.
+
+**2b-2 ✅ (plan `docs/superpowers/plans/2026-11-09-stage-2b2-targeting-melee.md`):** `CombatHandler`
+(aggressors, threat, priority target, hurt-resistance rule, 40-tick combat reset) and the synced
+`Attacking` flag; target goals in the 1.12.2 order (clear target, vanilla hurt-by, closest target
+through `NpcAttackSelector`: faction hostility, `AttackOtherFactions`, creative/spectator ignored,
+`DirectLOS` NONE, near-home rule); monsters go for `GetsAttacked` factions; damage intake (owner,
+same-faction, friendly-player and suffocation damage refused; faction defence with `ThroughWalls`;
+retaliation); melee per `DataMelee` (strength, delay, range, knockback, fire/potion effect); every
+`EnumNpcTactics` tactic plus the `OnAttack` responses (panic, retreat, nothing), sprint and pounce;
+`CalmdownRange` in HitAndRun. Combat GameTests run in a 33x33 arena with an in-level mock player.
+Seams left: `getOwner()`/`isFollower()` (roles), `isKilled()` (2b-3), `AbstractTacticGoal.isRanged()`
+(2b-4). Not ported (no 1.12.2 behaviour or later stages): `AttackInvisible` (only load/save in
+1.12.2), the client-side `DirectLOS` modes other than NONE (they use the vanilla line of sight),
+scripted NPC events, attack lines, animations.
 Still owed by 2b:
-- **2b-2 targeting and melee:** target goals (aggro, `OnAttack` retaliation, other factions,
-  `AttackInvisible`, `DirectLOS`/`EnumSeeTarget`, `CalmdownRange`), `CombatHandler`, melee per
-  `DataMelee`, every `EnumNpcTactics` tactic.
 - **2b-3 damage, death, respawn:** resistances, `PotionImmune`, `IgnoreCobweb`, `ChanceBlockDamage`,
   regen, `BurnInSun`, the killed state, drops per `DataInventory`/`LootMode` (corpse loot via the
   vanilla chest menu), XP, `SpawnCycle`/`RespawnTime`, `reset()`.
 - **2b-4 ranged and projectiles:** `EntityProjectile` (`customnpcs:projectile`) driven by
   `DataRanged`, switching to melee at `DistanceToMelee`.
-- Not yet checked by hand: the 2b-1 gear render check (`runClient`) and the 2a wand check.
+- 2b-3 also owes: a `customnpcs:npc` damage type (resistances need it; melee uses vanilla
+  `mobAttack` until then), `ChanceBlockDamage` blocking in `hurtServer`, the void-damage reset of a
+  killed NPC, and `isKilled()` behind the seams above.
+- Deferred minors from 2b-1 (still open): old `NpcInv`+`DropChance` entries load as empty
+  `DropSet`s and are overwritten on save; `Faction.description` defaults to `""` instead of
+  `{"text":""}`; `FactionRegistry` `lastId` can load as 0; `DataAI.getMovingPath()` exposes the live
+  `int[]` arrays; int `Slot` tags are masked with `& 0xFF`.
+- Not yet checked by hand: the 2b-1 gear render check (`runClient`), the 2a wand check, and the
+  2b-2 combat check (an aggressive NPC hunts a survival player; orbit, retreat, default, creative).
 
 1. Copy bucket A (`constants`, `markovnames`).
 2. `EntityCustomNpc extends PathfinderMob`, entity type, attributes, spawn egg.

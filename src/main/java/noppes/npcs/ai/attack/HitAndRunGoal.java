@@ -98,7 +98,7 @@ public final class HitAndRunGoal extends AbstractTacticGoal {
             }
         }
         if (vec == null) {
-            vec = DodgeGoal.findRetreat(npc, tacticalRange, range, isRanged());
+            vec = DodgeGoal.findRetreat(npc, tacticalRange, range, isRanged(), npc.stats.isCalmdown());
         }
         if (vec != null) {
             npc.getNavigation().moveTo(vec.x, vec.y, vec.z, 1.3d);

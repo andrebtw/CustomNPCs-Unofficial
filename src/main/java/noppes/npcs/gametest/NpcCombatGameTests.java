@@ -69,6 +69,9 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("sprint_sets_sprinting", () -> NpcCombatGameTests::sprintSetsSprinting);
         FUNCTIONS.register("pounce_leaps_at_mid_range", () -> NpcCombatGameTests::pounceLeapsAtMidRange);
         FUNCTIONS.register("on_attack_nothing_has_no_attack_goal", () -> NpcCombatGameTests::onAttackNothingHasNoAttackGoal);
+        FUNCTIONS.register("calmdown_keeps_hit_and_run_near_home", () -> NpcCombatGameTests::calmdownKeepsHitAndRunNearHome);
+        FUNCTIONS.register("exit_aggressive_npc_hunts_and_hits_survival_player", () -> NpcCombatGameTests::exitAggressiveNpcHuntsAndHitsSurvivalPlayer);
+        FUNCTIONS.register("exit_default_npc_is_harmless", () -> NpcCombatGameTests::exitDefaultNpcIsHarmless);
     }
 
     private NpcCombatGameTests() {}
@@ -690,6 +693,68 @@ public final class NpcCombatGameTests {
                     h.assertTrue(npc.tacticGoal == null, "no attack goal");
                     h.assertTrue(npc.position().subtract(start[0]).horizontalDistance() < 0.1, "never closes in");
                     h.assertTrue(player.hits.isEmpty(), "never hits");
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    /** Stage 2b-2 exit check: a default-settings aggressive NPC hunts, reaches and hits a survival player. */
+    private static void exitAggressiveNpcHuntsAndHitsSurvivalPlayer(GameTestHelper h) {
+        var npc = aggressive(h, -6, 0);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(6, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "targets the player"))
+                .thenWaitUntil(() -> h.assertFalse(player.hits.isEmpty(), "reaches and hits the player"))
+                .thenExecute(() -> {
+                    h.assertTrue(npc.isAttacking(), "attacking during the fight");
+                    h.assertTrue(player.getHealth() < player.getMaxHealth(), "player damaged");
+                    player.discard();
+                })
+                .thenIdle(60)
+                .thenExecute(() -> {
+                    h.assertTrue(npc.getTarget() == null, "target dropped");
+                    h.assertFalse(npc.isAttacking(), "combat over");
+                })
+                .thenSucceed();
+    }
+
+    /** Stage 2b-2 exit check: a default NPC next to a survival player does nothing. */
+    private static void exitDefaultNpcIsHarmless(GameTestHelper h) {
+        var npc = npc(h);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(1.5, 0));
+        Vec3[] start = {null};
+        h.startSequence()
+                .thenIdle(20)
+                .thenExecute(() -> start[0] = npc.position())
+                .thenIdle(100)
+                .thenExecute(() -> {
+                    h.assertTrue(player.hits.isEmpty(), "no damage");
+                    h.assertTrue(npc.getTarget() == null, "no target");
+                    h.assertFalse(npc.isAttacking(), "not attacking");
+                    h.assertTrue(npc.position().subtract(start[0]).horizontalDistance() < 0.1, "did not move");
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    /**
+     * 1.12.2 CalmdownRange: HitAndRun only retreats to spots within 32 blocks (NpcNavRange) of home.
+     * With home 100 blocks away no spot qualifies, so the NPC keeps its target after hitting.
+     */
+    private static void calmdownKeepsHitAndRunNearHome(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        npc.ai.setTactic(3);
+        npc.ai.setTacticalRadius(6);
+        npc.ai.setReturnToStart(false);
+        npc.stats.melee.setStrength(1);
+        npc.ai.setStartPos(npc.blockPosition().offset(100, 0, 0));
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        boolean[] ran = {false};
+        h.onEachTick(() -> ran[0] |= !player.hits.isEmpty() && npc.getTarget() == null);
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(player.hits.size() >= 3, "keeps hitting"))
+                .thenExecute(() -> {
+                    h.assertFalse(ran[0], "never ran away from home");
                     player.discard();
                 })
                 .thenSucceed();
