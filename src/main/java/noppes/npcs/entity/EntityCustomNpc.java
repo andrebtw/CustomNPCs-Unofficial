@@ -623,7 +623,8 @@ public class EntityCustomNpc extends PathfinderMob {
                 rebuildGoals();
             }
             // 1.12.2 onUpdate: a target that turned creative (or a dying NPC) drops it, past the lock.
-            if (deathTime > 0 || isUntargetablePlayer(getTarget())) {
+            // So does a target it may no longer hold (turned invisible, or AIDisabled switched on).
+            if (deathTime > 0 || isUntargetablePlayer(getTarget()) || !mayTarget(getTarget())) {
                 super.setTarget(null);
             }
             if (!ai.isAiDisabled() && !isKilled() && tickCount % 20 == 0) {
@@ -676,7 +677,8 @@ public class EntityCustomNpc extends PathfinderMob {
         }
         if (isAttacking()) {
             LivingEntity target = getTarget();
-            if (target != null && distanceTo(target) > distanceTo(attacker)) {
+            // 0 damage never switches the target either (user ruling; 1.12.2 had no amount check here)
+            if (amount > 0.0f && target != null && distanceTo(target) > distanceTo(attacker)) {
                 setTarget(attacker);
             }
         } else if (amount > 0.0f) {

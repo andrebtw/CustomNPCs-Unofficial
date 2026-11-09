@@ -82,6 +82,8 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("direct_los_calm_sees_only_in_view_cone", () -> NpcCombatGameTests::directLosCalmSeesOnlyInViewCone);
         FUNCTIONS.register("direct_los_wary_senses_close_targets_behind", () -> NpcCombatGameTests::directLosWarySensesCloseTargetsBehind);
         FUNCTIONS.register("direct_los_rolls_for_invisible_mobs", () -> NpcCombatGameTests::directLosRollsForInvisibleMobs);
+        FUNCTIONS.register("zero_damage_hit_does_not_switch_target", () -> NpcCombatGameTests::zeroDamageHitDoesNotSwitchTarget);
+        FUNCTIONS.register("provoker_turning_invisible_is_dropped_at_once", () -> NpcCombatGameTests::provokerTurningInvisibleIsDroppedAtOnce);
         FUNCTIONS.register("exit_aggressive_npc_hunts_and_hits_survival_player", () -> NpcCombatGameTests::exitAggressiveNpcHuntsAndHitsSurvivalPlayer);
         FUNCTIONS.register("exit_default_npc_is_harmless", () -> NpcCombatGameTests::exitDefaultNpcIsHarmless);
     }
@@ -1019,5 +1021,53 @@ public final class NpcCombatGameTests {
         h.assertValueEqual(200, playerSeen, "invisible players are not rolled for (1.12.2)");
         player.discard();
         h.succeed();
+    }
+
+    /** A fighting NPC hit for 0 by someone closer than its target keeps its target (review fix). */
+    private static void zeroDamageHitDoesNotSwitchTarget(GameTestHelper h) {
+        var npc = aggressive(h, 0, 0);
+        npc.ai.setMoveSpeed(0);
+        var far = TestPlayer.spawn(h, GameType.SURVIVAL, offset(10, 0));
+        var near = TestPlayer.spawn(h, GameType.CREATIVE, offset(-2, 0)); // not picked by the selector
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == far, "targets the far player"))
+                .thenIdle(5) // the combat handler marks it attacking on its next tick
+                .thenExecute(() -> {
+                    h.assertTrue(npc.isAttacking() && npc.combat.priorityTarget == null, "fighting, no lock");
+                    near.mode = GameType.SURVIVAL;
+                    h.assertTrue(hurt(h, npc, npc.damageSources().playerAttack(near), 0), "hurt");
+                    h.assertTrue(npc.getTarget() == far, "0 damage does not switch the target");
+                })
+                .thenIdle(20)
+                .thenExecute(() -> {
+                    h.assertTrue(npc.getTarget() == far, "still the far player");
+                    far.discard();
+                    near.discard();
+                })
+                .thenSucceed();
+    }
+
+    /**
+     * The player hits first (priority lock), then turns invisible: the NPC lets go within a few ticks,
+     * not at the 40-tick combat reset (review fix).
+     */
+    private static void provokerTurningInvisibleIsDroppedAtOnce(GameTestHelper h) {
+        var npc = npc(h, -2, 0);
+        npc.advanced.setFactionId(1);
+        npc.ai.setMoveSpeed(0);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(2, 0));
+        h.startSequence()
+                .thenIdle(10)
+                .thenExecute(() -> {
+                    hurt(h, npc, npc.damageSources().playerAttack(player), 2);
+                    h.assertTrue(npc.getTarget() == player && npc.combat.priorityTarget == player, "provoked");
+                    makeInvisible(player);
+                })
+                .thenIdle(10)
+                .thenExecute(() -> {
+                    h.assertTrue(npc.getTarget() == null, "invisible provoker dropped");
+                    player.discard();
+                })
+                .thenSucceed();
     }
 }
