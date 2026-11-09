@@ -57,6 +57,10 @@ public final class NpcCombatGameTests {
         FUNCTIONS.register("no_tactic_still_hits", () -> NpcCombatGameTests::noTacticStillHits);
         FUNCTIONS.register("ai_disabled_never_hits", () -> NpcCombatGameTests::aiDisabledNeverHits);
         FUNCTIONS.register("default_npc_stays_put", () -> NpcCombatGameTests::defaultNpcStaysPut);
+        FUNCTIONS.register("stagger_npc_still_reaches_and_hits", () -> NpcCombatGameTests::staggerNpcStillReachesAndHits);
+        FUNCTIONS.register("orbit_npc_keeps_close_and_hits", () -> NpcCombatGameTests::orbitNpcKeepsCloseAndHits);
+        FUNCTIONS.register("hit_and_run_restores_target", () -> NpcCombatGameTests::hitAndRunRestoresTarget);
+        FUNCTIONS.register("hit_and_run_stop_clears_run", () -> NpcCombatGameTests::hitAndRunStopClearsRun);
     }
 
     private NpcCombatGameTests() {}
@@ -498,5 +502,64 @@ public final class NpcCombatGameTests {
                 h.succeed();
             });
         });
+    }
+
+    private static void staggerNpcStillReachesAndHits(GameTestHelper h) {
+        var npc = aggressive(h, -4, 0);
+        npc.ai.setTactic(1);
+        huntAndHit(h, npc, TestPlayer.spawn(h, GameType.SURVIVAL, offset(4, 0)));
+    }
+
+    /** Orbit keeps min(TacticalRadius, AttackRange) from the target: in hit range with defaults. */
+    private static void orbitNpcKeepsCloseAndHits(GameTestHelper h) {
+        var npc = aggressive(h, -5, 0);
+        npc.ai.setTactic(2);
+        npc.ai.setTacticalRadius(6);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(5, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertFalse(player.hits.isEmpty(), "hit"))
+                .thenIdle(40)
+                .thenExecute(() -> {
+                    double tr = Math.min(6, npc.stats.melee.getRange());
+                    h.assertTrue(npc.distanceTo(player) <= tr * 1.1 + 1.5, "stays near: " + npc.distanceTo(player));
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    private static void hitAndRunRestoresTarget(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        npc.ai.setTactic(3);
+        npc.ai.setTacticalRadius(6);
+        npc.stats.melee.setStrength(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == null && !player.hits.isEmpty(), "ran off after a hit"))
+                .thenExecute(() -> h.assertTrue(player.isAlive(), "player still alive"))
+                .thenExecute(() -> h.assertFalse(npc.canNewAttack(), "no new targets while running"))
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == player, "target restored"))
+                .thenExecute(() -> {
+                    h.assertTrue(npc.canNewAttack(), "free again");
+                    player.discard();
+                })
+                .thenSucceed();
+    }
+
+    private static void hitAndRunStopClearsRun(GameTestHelper h) {
+        var npc = aggressive(h, -3, 0);
+        npc.ai.setTactic(3);
+        npc.ai.setTacticalRadius(6);
+        npc.stats.melee.setStrength(1);
+        var player = TestPlayer.spawn(h, GameType.SURVIVAL, offset(3, 0));
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(npc.getTarget() == null && !player.hits.isEmpty(), "ran off after a hit"))
+                .thenExecute(() -> h.assertTrue(player.isAlive(), "player still alive"))
+                .thenExecute(() -> {
+                    var goal = npc.tacticGoal;
+                    npc.rebuildGoals(); // stops the running goals, as a data change or death would
+                    h.assertTrue(goal.canNewAttack(), "a stopped HitAndRun keeps no run state");
+                    player.discard();
+                })
+                .thenSucceed();
     }
 }

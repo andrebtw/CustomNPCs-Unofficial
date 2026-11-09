@@ -27,7 +27,11 @@ import net.minecraft.core.Holder;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import noppes.npcs.ai.attack.AbstractTacticGoal;
+import noppes.npcs.ai.attack.DodgeGoal;
+import noppes.npcs.ai.attack.HitAndRunGoal;
 import noppes.npcs.ai.attack.NoTacticGoal;
+import noppes.npcs.ai.attack.SurroundGoal;
+import net.minecraft.world.phys.Vec3;
 import noppes.npcs.ai.attack.OnslaughtGoal;
 import noppes.npcs.entity.data.DataMelee;
 import noppes.npcs.util.NpcMobEffects;
@@ -165,6 +169,9 @@ public class EntityCustomNpc extends PathfinderMob {
             tacticGoal = new OnslaughtGoal(this);
         } else if (ai.getOnAttack() == 0) {
             tacticGoal = switch (ai.getTactic()) {
+                case 1 -> new DodgeGoal(this);
+                case 2 -> new SurroundGoal(this);
+                case 3 -> new HitAndRunGoal(this);
                 case 6 -> new NoTacticGoal(this);
                 default -> new OnslaughtGoal(this);
             };
@@ -333,6 +340,38 @@ public class EntityCustomNpc extends PathfinderMob {
     /** Whether the attack goal lets the target goals pick a new target (HitAndRun says no while running). */
     public boolean canNewAttack() {
         return tacticGoal == null || tacticGoal.canNewAttack();
+    }
+
+    /**
+     * 1.12.2 {@code Util.jumpTowards}: a ballistic leap at {@code pos}. As in 1.12.2 the launch vector
+     * is a unit vector (its {@code scale(speed)} result was discarded), and {@code speed} only shapes
+     * the pitch.
+     */
+    public void jumpTowards(float speed, Vec3 pos) {
+        double x = pos.x - getX();
+        double y = pos.y - getBoundingBox().minY;
+        double z = pos.z - getZ();
+        float pitch = launchPitch(speed, y, Math.sqrt(x * x + z * z));
+        float yaw = (float) (Math.atan2(x, z) * 180.0d / Math.PI);
+        float pi = (float) Math.PI;
+        setDeltaMovement(Math.sin(yaw / 180.0f * pi) * Math.cos(pitch / 180.0f * pi),
+                Math.sin((pitch + 1.0f) / 180.0f * pi),
+                Math.cos(yaw / 180.0f * pi) * Math.cos(pitch / 180.0f * pi));
+        hurtMarked = true;
+    }
+
+    /** 1.12.2 {@code Util.getPitch}: launch angle (degrees) for speed, height and distance, g = 0.2. */
+    static float launchPitch(float speed, double y, double horizontalDist) {
+        float g = 0.2f;
+        float s2 = speed * speed;
+        double a = g * horizontalDist;
+        double b = g * horizontalDist * horizontalDist + 2.0d * y * s2;
+        double c = (double) (s2 * s2) - g * b;
+        if (c < 0.0d) {
+            return 90.0f;
+        }
+        float d = s2 - (float) Math.sqrt(c);
+        return (float) (Math.atan2(d, a) * 180.0d / Math.PI);
     }
 
     /**
